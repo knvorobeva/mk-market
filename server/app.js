@@ -1,5 +1,4 @@
 const apiBase = "/api";
-
 const state = {
   token: localStorage.getItem("token") || "",
   me: null,
@@ -8,13 +7,10 @@ const state = {
   reviewMediaDataUrls: [],
   pendingVerifyEmail: localStorage.getItem("pending_verify_email") || "",
 };
-
 const WORKSHOP_TYPE_OPTIONS = ["Групповой МК", "Индивидуальный МК", "МК-Свидание"];
-
 function qs(id) {
   return document.querySelector(id);
 }
-
 function show(message) {
   const text = String(message || "");
   let container = document.querySelector(".toast-container");
@@ -23,18 +19,15 @@ function show(message) {
     container.className = "toast-container";
     document.body.appendChild(container);
   }
-
   const toast = document.createElement("div");
   toast.className = "toast";
   toast.textContent = text;
   container.appendChild(toast);
-
   setTimeout(() => {
     toast.classList.add("hide");
     setTimeout(() => toast.remove(), 220);
   }, 2800);
 }
-
 function localizeErrorMessage(message) {
   const msg = String(message || "");
   const map = [
@@ -94,11 +87,9 @@ function avatarBlock(imageUrl, fallbackText = "ЛК") {
   }
   return escapeHtml(fallbackText);
 }
-
 function autoFitAvatarImage(img) {
   if (!img || img.dataset.avatarAutofitBound === "1") return;
   img.dataset.avatarAutofitBound = "1";
-
   const analyzeAndScale = () => {
     if (!img.naturalWidth || !img.naturalHeight) return;
     try {
@@ -106,7 +97,6 @@ function autoFitAvatarImage(img) {
       const ratio = Math.max(img.naturalWidth, img.naturalHeight) / maxSide;
       const w = Math.max(24, Math.round(img.naturalWidth / Math.max(1, ratio)));
       const h = Math.max(24, Math.round(img.naturalHeight / Math.max(1, ratio)));
-
       const canvas = document.createElement("canvas");
       canvas.width = w;
       canvas.height = h;
@@ -114,7 +104,6 @@ function autoFitAvatarImage(img) {
       if (!ctx) return;
       ctx.drawImage(img, 0, 0, w, h);
       const px = ctx.getImageData(0, 0, w, h).data;
-
       const cornerAt = (x, y) => {
         const idx = (y * w + x) * 4;
         return [px[idx], px[idx + 1], px[idx + 2]];
@@ -126,7 +115,6 @@ function autoFitAvatarImage(img) {
         0
       );
       if (spread > 90) return;
-
       const tolerance = 40;
       const isBorder = (x, y) => {
         const idx = (y * w + x) * 4;
@@ -135,22 +123,18 @@ function autoFitAvatarImage(img) {
         const d = Math.abs(px[idx] - avg[0]) + Math.abs(px[idx + 1] - avg[1]) + Math.abs(px[idx + 2] - avg[2]);
         return d <= tolerance;
       };
-
       let top = 0;
       let bottom = h - 1;
       let left = 0;
       let right = w - 1;
-
       while (top < h && Array.from({ length: w }).every((_, x) => isBorder(x, top))) top += 1;
       while (bottom >= 0 && Array.from({ length: w }).every((_, x) => isBorder(x, bottom))) bottom -= 1;
       while (left < w && Array.from({ length: h }).every((_, y) => isBorder(left, y))) left += 1;
       while (right >= 0 && Array.from({ length: h }).every((_, y) => isBorder(right, y))) right -= 1;
-
       if (right <= left || bottom <= top) return;
       const innerW = right - left + 1;
       const innerH = bottom - top + 1;
       const contentRatio = Math.max(innerW / w, innerH / h);
-
       if (contentRatio < 0.82) {
         const scale = Math.min(2.8, Math.max(1.1, 0.9 / Math.max(0.1, contentRatio)));
         img.style.transform = `scale(${scale.toFixed(2)})`;
@@ -159,7 +143,6 @@ function autoFitAvatarImage(img) {
         img.style.transform = "";
       }
     } catch {
-      // skip autofit if canvas analysis is unavailable (e.g. cross-origin restrictions)
     }
   };
 
@@ -169,7 +152,6 @@ function autoFitAvatarImage(img) {
     img.addEventListener("load", analyzeAndScale, { once: true });
   }
 }
-
 function applyImageFallbacks(root = document) {
   root.querySelectorAll(".mk-photo img, .avatar img, .review-avatar img, .nav-avatar img").forEach((img) => {
     if (img.dataset.fallbackBound === "1") return;
@@ -190,7 +172,6 @@ function applyImageFallbacks(root = document) {
     }
   });
 }
-
 function normalizeRuPhone(value) {
   const digits = String(value || "").replace(/\D/g, "");
   if (!digits) return "+7";
@@ -198,38 +179,31 @@ function normalizeRuPhone(value) {
   if (digits.startsWith("8")) return `+7${digits.slice(1, 11)}`;
   return `+7${digits.slice(0, 10)}`;
 }
-
 function normalizeWorkshopType(value) {
   const type = String(value || "").trim();
   if (WORKSHOP_TYPE_OPTIONS.includes(type)) return type;
   return WORKSHOP_TYPE_OPTIONS[0];
 }
-
 function workshopTypesList(value, fallbackValue = "") {
   const source = Array.isArray(value) ? value : String(value || "").split(",");
   const seen = new Set();
-
   source.forEach((raw) => {
     const text = String(raw || "").trim();
     if (!text) return;
     seen.add(normalizeWorkshopType(text));
   });
-
   if (!seen.size && fallbackValue) {
     const fallbackText = String(fallbackValue || "").trim();
     if (fallbackText) seen.add(normalizeWorkshopType(fallbackText));
   }
-
   const ordered = WORKSHOP_TYPE_OPTIONS.filter((item) => seen.has(item));
   return ordered;
 }
-
 function workshopTypesLabel(value, fallbackValue = "Творческий МК") {
   const types = workshopTypesList(value, fallbackValue);
   if (!types.length) return fallbackValue;
   return types.join(", ");
 }
-
 function capacityForWorkshopType(workshopType, fallbackValue = 1) {
   const type = normalizeWorkshopType(workshopType);
   if (type === "Индивидуальный МК") return 1;
@@ -237,7 +211,6 @@ function capacityForWorkshopType(workshopType, fallbackValue = 1) {
   const fallback = Number(fallbackValue);
   return Number.isFinite(fallback) && fallback > 0 ? fallback : 6;
 }
-
 function syncWorkshopCapacityControl(typeInput, capacityInput) {
   if (!typeInput || !capacityInput) return;
   const type = normalizeWorkshopType(typeInput.value);
@@ -253,7 +226,6 @@ function syncWorkshopCapacityControl(typeInput, capacityInput) {
   capacityInput.readOnly = false;
   capacityInput.disabled = false;
 }
-
 function syncSlotSeatsByType(typeInput, seatsInput) {
   if (!typeInput || !seatsInput) return;
   const type = normalizeWorkshopType(typeInput.value);
@@ -269,11 +241,9 @@ function syncSlotSeatsByType(typeInput, seatsInput) {
   seatsInput.readOnly = false;
   seatsInput.disabled = false;
 }
-
 function ensureWorkshopEditModal() {
   let modal = qs("#workshop-edit-modal");
   if (modal) return modal;
-
   modal = document.createElement("div");
   modal.id = "workshop-edit-modal";
   modal.className = "workshop-edit-modal";
@@ -303,11 +273,9 @@ function ensureWorkshopEditModal() {
       </div>
     </section>
   `;
-
   document.body.appendChild(modal);
   return modal;
 }
-
 function openWorkshopEditModal(current) {
   const modal = ensureWorkshopEditModal();
   const titleInput = qs("#edit-workshop-title");
@@ -321,10 +289,8 @@ function openWorkshopEditModal(current) {
   const saveBtn = qs("#edit-workshop-save");
   const cancelBtn = qs("#edit-workshop-cancel");
   const closeButtons = modal.querySelectorAll("[data-close-edit-modal='1']");
-
   let imageUrl = String(current.image_url || "").trim();
   let readingImage = false;
-
   titleInput.value = String(current.title || "");
   durationInput.value = String(Math.max(1, Number(current.duration_min || 0)));
   locationInput.value = String(current.location || "");
@@ -332,13 +298,11 @@ function openWorkshopEditModal(current) {
   imageFileInput.value = "";
   imageInfo.textContent = imageUrl ? "Текущее фото установлено" : "Фото не установлено";
   statusNode.textContent = "";
-
   removeImageBtn.onclick = () => {
     imageUrl = "";
     imageFileInput.value = "";
     imageInfo.textContent = "Фото будет удалено";
   };
-
   imageFileInput.onchange = async (event) => {
     statusNode.textContent = "";
     const input = event.target;
@@ -367,13 +331,10 @@ function openWorkshopEditModal(current) {
       saveBtn.disabled = false;
     }
   };
-
   modal.hidden = false;
   document.body.classList.add("modal-open");
-
   return new Promise((resolve) => {
     let done = false;
-
     const close = (result = null) => {
       if (done) return;
       done = true;
@@ -386,12 +347,10 @@ function openWorkshopEditModal(current) {
       saveBtn.onclick = null;
       resolve(result);
     };
-
     closeButtons.forEach((btn) => {
       btn.onclick = () => close(null);
     });
     cancelBtn.onclick = () => close(null);
-
     saveBtn.onclick = () => {
       if (readingImage) {
         statusNode.textContent = "Дождись загрузки фото";
@@ -401,7 +360,6 @@ function openWorkshopEditModal(current) {
       const description = descriptionInput.value.trim();
       const location = locationInput.value.trim();
       const durationMin = Number(durationInput.value);
-
       if (!title) {
         statusNode.textContent = "Название не может быть пустым";
         return;
@@ -410,7 +368,6 @@ function openWorkshopEditModal(current) {
         statusNode.textContent = "Длительность должна быть больше 0";
         return;
       }
-
       close({
         title,
         description,
@@ -421,11 +378,9 @@ function openWorkshopEditModal(current) {
     };
   });
 }
-
 function ensureSlotEditModal() {
   let modal = qs("#slot-edit-modal");
   if (modal) return modal;
-
   modal = document.createElement("div");
   modal.id = "slot-edit-modal";
   modal.className = "workshop-edit-modal";
@@ -453,7 +408,6 @@ function ensureSlotEditModal() {
   document.body.appendChild(modal);
   return modal;
 }
-
 function openSlotEditModal(current) {
   const modal = ensureSlotEditModal();
   const startInput = qs("#edit-slot-start");
@@ -464,7 +418,6 @@ function openSlotEditModal(current) {
   const saveBtn = qs("#edit-slot-save");
   const cancelBtn = qs("#edit-slot-cancel");
   const closeButtons = modal.querySelectorAll("[data-close-slot-modal='1']");
-
   typeInput.innerHTML = WORKSHOP_TYPE_OPTIONS.map((option) => `<option value="${escapeHtml(option)}">${escapeHtml(option)}</option>`).join("");
   startInput.value = toLocalInputFromIso(current.start_at);
   typeInput.value = normalizeWorkshopType(current.workshop_type || "");
@@ -472,14 +425,11 @@ function openSlotEditModal(current) {
   seatsInput.value = String(Math.max(1, Number(current.total_seats || 0)));
   syncSlotSeatsByType(typeInput, seatsInput);
   statusNode.textContent = "";
-
   typeInput.onchange = () => {
     syncSlotSeatsByType(typeInput, seatsInput);
   };
-
   modal.hidden = false;
   document.body.classList.add("modal-open");
-
   return new Promise((resolve) => {
     let done = false;
     const close = (result = null) => {
@@ -494,7 +444,6 @@ function openSlotEditModal(current) {
       saveBtn.onclick = null;
       resolve(result);
     };
-
     closeButtons.forEach((btn) => {
       btn.onclick = () => close(null);
     });
