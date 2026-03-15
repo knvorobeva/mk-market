@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pi Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=Source+Code+Pro:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
+</head>
+<body>
+  <div id="app">
+    <div id="auth" class="card">
+      <h1>Pi Studio</h1>
+      <p class="muted">Загрузка, правки и нейро‑редактирование кода в одном месте.</p>
+      <div class="tabs">
+        <button id="tab-login" class="tab active">Вход</button>
+        <button id="tab-register" class="tab">Регистрация</button>
+      </div>
+      <div id="login-form" class="form">
+        <input id="login-email" type="email" placeholder="Email" />
+        <input id="login-password" type="password" placeholder="Пароль" />
+        <button id="login-btn" class="primary">Войти</button>
+      </div>
+      <div id="register-form" class="form hidden">
+        <input id="register-email" type="email" placeholder="Email" />
+        <input id="register-password" type="password" placeholder="Пароль" />
+        <button id="register-btn" class="primary">Создать</button>
+      </div>
+      <div id="auth-msg" class="msg"></div>
+    </div>
+
+    <div id="workspace" class="hidden">
+      <header>
+        <div class="brand">
+          <span class="logo">Pi Studio</span>
+          <span id="user-email" class="muted"></span>
+        </div>
+        <div class="actions">
+          <button id="new-project">Новый проект</button>
+          <button id="logout">Выйти</button>
+        </div>
+      </header>
+      <main>
+        <aside class="sidebar">
+          <h3>Проекты</h3>
+          <div id="projects" class="list"></div>
+          <div class="separator"></div>
+          <h3>Файлы</h3>
+          <div id="tree" class="list"></div>
+          <div class="tools">
+            <button id="new-file">Новый файл</button>
+            <label class="upload">
+              Загрузить zip
+              <input id="upload-zip" type="file" accept=".zip" />
+            </label>
+          </div>
+        </aside>
+        <section class="editor">
+          <div class="editor-bar">
+            <span id="current-path" class="muted">Файл не выбран</span>
+            <div>
+              <button id="save-file" class="primary">Сохранить</button>
+            </div>
+          </div>
+          <div id="editor"></div>
+        </section>
+        <aside class="panel">
+          <div class="panel-block">
+            <div class="panel-header">
+              <h3>T‑Invest</h3>
+              <button id="ti-refresh">Обновить</button>
+            </div>
+            <pre id="ti-data" class="diff"></pre>
+            <div id="ti-msg" class="msg"></div>
+          </div>
+          <div class="separator"></div>
+          <h3>Нейро‑редактор</h3>
+          <textarea id="ai-instruction" placeholder="Например: исправь баг, добавь валидацию, оптимизируй, перепиши компонент..."></textarea>
+          <div class="panel-actions">
+            <button id="ai-preview">Сделать правку</button>
+            <button id="ai-apply" class="primary" disabled>Применить</button>
+          </div>
+          <pre id="ai-diff" class="diff"></pre>
+          <div id="ai-msg" class="msg"></div>
+        </aside>
+      </main>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

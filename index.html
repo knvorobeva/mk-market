@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>МК-Маркет — поиск и бронирование мастер-классов</title>
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;600;700;800&family=Playfair+Display:wght@600;700&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div class="page">
+      <header class="site-header" id="top">
+        <div class="logo">
+          <span class="logo-mark">МК</span>
+          <div>
+            <strong>МК-Маркет</strong>
+            <span>маркет творческих мастер-классов</span>
+          </div>
+        </div>
+        <nav class="nav">
+          <a href="catalog.html">Каталог</a>
+          <a href="master.html">Мастер</a>
+          <a href="#account">Личный кабинет</a>
+          <a href="#auth" class="button ghost">Вход</a>
+          <a href="#auth" class="button primary">Регистрация</a>
+        </nav>
+      </header>
+
+      <main>
+        <section class="hero">
+          <div class="hero-text">
+            <p class="eyebrow">творчество рядом</p>
+            <h1>МК-Маркет — твой лучший выбор в поиске мастер-классов.</h1>
+            <p class="lead">
+              Ищи мастера или студию по имени, находи нужный тип мастер-класса, бронируй удобные слоты и
+              собирай впечатления вместе с друзьями.
+            </p>
+            <div class="search-panel hero-search">
+              <label class="field">
+                <span>Поиск</span>
+                <input id="hero-search" type="text" placeholder="Например: Анна Кузнецова или бенто-торт" />
+              </label>
+              <label class="field">
+                <span>Дата</span>
+                <input id="hero-date" type="date" />
+              </label>
+              <label class="field">
+                <span>Фильтр</span>
+                <select id="hero-filter">
+                  <option>По возрастанию цены</option>
+                  <option>По понижению цены</option>
+                  <option>По выбранной дате</option>
+                </select>
+              </label>
+              <button id="hero-search-btn" class="button primary">Найти</button>
+            </div>
+          </div>
+          <div class="hero-panel">
+            <div class="hero-card">
+              <div class="pill">Популярно на этой неделе</div>
+              <h3>Бенто-торт: мини-шедевр за 2 часа</h3>
+              <p>Групповой мастер-класс · 6 мест · 2 800 ₽</p>
+              <div class="hero-slot">
+                <span>Ближайший слот</span>
+                <strong>9 марта, 18:30</strong>
+              </div>
+              <button class="button primary">Записаться</button>
+            </div>
+            <div class="hero-card">
+              <div class="pill">Популярно на этой неделе</div>
+              <h3>Керамика: чашка ручной лепки</h3>
+              <p>Индивидуальный мастер-класс · 4 места · 3 600 ₽</p>
+              <div class="hero-slot">
+                <span>Ближайший слот</span>
+                <strong>10 марта, 12:00</strong>
+              </div>
+              <button class="button primary">Записаться</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="account">
+          <div class="section-title">
+            <h2>Личный кабинет</h2>
+            <p>Редактирование профиля, бронирования и отмена записи не позднее чем за сутки до старта.</p>
+          </div>
+          <div class="account-grid">
+            <div class="card profile-card">
+              <h3>Профиль</h3>
+              <div class="profile-row">
+                <div class="avatar large">МК</div>
+                <div>
+                  <strong>Мария Котова</strong>
+                  <span>maria@mail.ru</span>
+                </div>
+              </div>
+              <div class="field-group">
+                <label class="field">
+                  <span>Имя</span>
+                  <input type="text" value="Мария Котова" />
+                </label>
+                <label class="field">
+                  <span>Почта</span>
+                  <input type="email" value="maria@mail.ru" />
+                </label>
+                <label class="field">
+                  <span>Пароль</span>
+                  <input type="password" value="password" />
+                </label>
+              </div>
+              <button class="button primary">Сохранить изменения</button>
+            </div>
+
+            <div class="card bookings-card">
+              <h3>Мои записи</h3>
+              <div class="booking-item">
+                <div>
+                  <strong>Бенто-торт за 2 часа</strong>
+                  <span>9 марта · 18:30 · 2 гостя</span>
+                </div>
+                <button class="button ghost">Отменить бронь</button>
+              </div>
+              <div class="booking-item">
+                <div>
+                  <strong>Рисование вином</strong>
+                  <span>12 марта · 20:00 · 1 гость</span>
+                </div>
+                <button class="button ghost">Отменить бронь</button>
+              </div>
+              <p class="hint">Отменить бронь можно не позднее чем за 24 часа до начала.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="auth">
+          <div class="section-title">
+            <h2>Вход и регистрация</h2>
+            <p>Пользователь выбирает роль — мастер/студия или гость. После регистрации — переход на главную.</p>
+          </div>
+          <div class="auth-grid">
+            <div class="card">
+              <h3>Вход</h3>
+              <label class="field">
+                <span>Почта</span>
+                <input id="login-email" type="email" placeholder="name@mail.ru" />
+              </label>
+              <label class="field">
+                <span>Пароль</span>
+                <input id="login-password" type="password" placeholder="••••••••" />
+              </label>
+              <button id="login-btn" class="button primary">Войти</button>
+            </div>
+            <div class="card">
+              <h3>Регистрация</h3>
+              <label class="field">
+                <span>Роль</span>
+                <select id="register-role">
+                  <option>Пользователь</option>
+                  <option>Мастер / Студия</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>ФИО</span>
+                <input id="register-name" type="text" placeholder="Анна Кузнецова" />
+              </label>
+              <label class="field">
+                <span>Почта</span>
+                <input id="register-email" type="email" placeholder="name@mail.ru" />
+              </label>
+              <label class="field">
+                <span>Пароль</span>
+                <input id="register-password" type="password" placeholder="••••••••" />
+              </label>
+              <button id="register-btn" class="button primary">Зарегистрироваться</button>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <footer class="site-footer">
+        <div>© 2026 МК-Маркет</div>
+        <div>Москва · support@mkmarket.ru</div>
+      </footer>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>

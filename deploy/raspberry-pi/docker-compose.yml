@@ -1,0 +1,13 @@
+services:
+  trade-agent:
+    build:
+      context: ../..
+      dockerfile: backend/Dockerfile
+    container_name: trade-agent
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8006:8000"
+    volumes:
+      - ../../backend/data:/app/backend/data
