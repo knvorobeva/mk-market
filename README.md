@@ -14,7 +14,7 @@
 - выгрузку событий в ICS
 - email-уведомления
 
-## Стек
+## Что использовалось на rasberry pi
 
 - Python
 - FastAPI
@@ -65,7 +65,7 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 После запуска приложение будет доступно по адресу:
 
 ```text
-http://127.0.0.1:8000
+http://127.0.0.1
 ```
 
 ## Переменные окружения
@@ -73,27 +73,25 @@ http://127.0.0.1:8000
 Приложение может работать и без части внешних интеграций, но для полной функциональности используются такие переменные:
 
 ```env
-APP_SECRET=change-me
-DB_PATH=app.db
-
-SMTP_HOST=
-SMTP_PORT=587
-SMTP_USER=
-SMTP_PASS=
-SMTP_FROM=
-SMTP_STARTTLS=1
-
-GOOGLE_CLIENT_ID=
-GOOGLE_CLIENT_SECRET=
-GOOGLE_REDIRECT_URI=
+APP_SECRET = change-me
+DB_PATH = app.db
+SMTP_HOST =
+SMTP_PORT = 587
+SMTP_USER =
+SMTP_PASS =
+SMTP_FROM =
+SMTP_STARTTLS = 1
+GOOGLE_CLIENT_ID =
+GOOGLE_CLIENT_SECRET =
+GOOGLE_REDIRECT_URI =
 ```
 
-## Что важно
+## Важно
 
-- локальная база данных не хранится в репозитории
+- локальная база данных не хранится в репозитории проекта
 - `.env`, `app.db`, резервные копии и виртуальное окружение исключены через `.gitignore`
-- прод-версия проекта запускается через `systemd` и `uvicorn`
+- прод-версия проекта запускается через `systemd` - автозапуск,  и `uvicorn` - бэкенд
 
 ## Примечание
 
-Если нужен только просмотр интерфейса, достаточно запустить backend из директории `server`, так как статические страницы отдаются самим приложением через FastAPI.
+Если нужен только просмотр интерфейса, нужно запустить backend из директории `server`, так как статические страницы отдаются самим приложением через FastAPI.
