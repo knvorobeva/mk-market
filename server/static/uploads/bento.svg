@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" role="img" aria-label="Бенто-торт">
+  <defs>
+    <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffe3ef"/>
+      <stop offset="100%" stop-color="#ff7bb8"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="800" fill="url(#g1)"/>
+  <circle cx="980" cy="180" r="150" fill="#ffffff66"/>
+  <circle cx="220" cy="620" r="180" fill="#ffffff55"/>
+  <text x="90" y="420" fill="#4a2036" font-family="Georgia, serif" font-size="86" font-weight="700">Бенто-торт</text>
+  <text x="90" y="500" fill="#5f2d45" font-family="Arial, sans-serif" font-size="44">База и декор</text>
+</svg>

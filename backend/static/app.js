@@ -4,8 +4,6 @@ let currentProject = null;
 let currentPath = "";
 let editor = null;
 let lastAIUpdated = "";
-let authDisabled = false;
-let authTabsInitialized = false;
 
 const authCard = document.getElementById("auth");
 const workspace = document.getElementById("workspace");
@@ -13,8 +11,6 @@ const authMsg = document.getElementById("auth-msg");
 const aiMsg = document.getElementById("ai-msg");
 const aiDiff = document.getElementById("ai-diff");
 const aiApply = document.getElementById("ai-apply");
-const tiMsg = document.getElementById("ti-msg");
-const tiData = document.getElementById("ti-data");
 
 function setMsg(el, msg) {
   el.textContent = msg || "";
@@ -43,41 +39,15 @@ async function api(path, options = {}) {
 function showWorkspace(user) {
   authCard.classList.add("hidden");
   workspace.classList.remove("hidden");
-  document.getElementById("user-email").textContent = user.email || "local";
-}
-
-async function loadTinkoffOverview() {
-  if (!tiData) return;
-  setMsg(tiMsg, "Загрузка...");
-  try {
-    const data = await api("/api/ti/overview");
-    tiData.textContent = JSON.stringify(data, null, 2);
-    setMsg(tiMsg, "");
-  } catch (e) {
-    tiData.textContent = "";
-    setMsg(tiMsg, e.message);
-  }
+  document.getElementById("user-email").textContent = user.email;
 }
 
 async function bootstrap() {
+  if (!token) return;
   try {
-    const cfg = await api("/api/config");
-    authDisabled = !!cfg.auth_disabled;
-    if (authDisabled) {
-      showWorkspace({ email: "local" });
-      await loadProjects();
-      await loadTinkoffOverview();
-      return;
-    }
-    if (!authTabsInitialized) {
-      initAuthTabs();
-      authTabsInitialized = true;
-    }
-    if (!token) return;
     const me = await api("/api/me");
     showWorkspace(me);
     await loadProjects();
-    await loadTinkoffOverview();
   } catch (e) {
     token = "";
     localStorage.removeItem("token");
@@ -305,11 +275,6 @@ function initWorkspaceActions() {
   });
 }
 
-function initTinkoffPanel() {
-  const refresh = document.getElementById("ti-refresh");
-  if (refresh) refresh.addEventListener("click", loadTinkoffOverview);
-}
-
 function initEditor() {
   window.require.config({ paths: { vs: "https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs" } });
   window.require(["vs/editor/editor.main"], () => {
@@ -324,7 +289,7 @@ function initEditor() {
   });
 }
 
+initAuthTabs();
 initWorkspaceActions();
-initTinkoffPanel();
 initEditor();
 bootstrap();

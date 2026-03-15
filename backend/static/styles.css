@@ -147,17 +147,6 @@ main {
   border-left: 1px solid var(--border);
 }
 
-.panel-block {
-  display: grid;
-  gap: 8px;
-}
-
-.panel-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
 .editor {
   display: flex;
   flex-direction: column;

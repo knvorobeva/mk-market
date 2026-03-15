@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>МК-Маркет · Мастер</title>
+    <link rel="stylesheet" href="/styles.css?v=20260314-46" />
+  </head>
+  <body>
+    <div class="page" id="master-container">
+      <header class="site-header">
+        <a class="logo" href="/"><span class="logo-mark">МК</span>
+          <div><strong>МК-Маркет</strong><span>страница мастера</span></div></a>
+        <nav class="nav">
+          <a id="nav-login-link" href="/#auth">Вход</a>
+          <a id="nav-catalog-link" href="/catalog.html" style="display:none">Каталог</a>
+          <a id="nav-my-page-link" href="/master.html" style="display:none">Моя страница</a>
+          <a id="nav-admin-link" class="button ghost" href="/new-workshop.html" style="display:none">Мои мастер-классы</a>
+          <a id="nav-cabinet-avatar" class="nav-avatar" href="/cabinet.html" style="display:none" aria-label="Личный кабинет">ЛК</a>
+        </nav>
+      </header>
+
+      <main>
+        <section class="section" id="master">
+          <div class="section-title">
+            <h2 id="master-name">Мастер</h2>
+            <p>Рейтинг: <strong id="master-rating">0</strong> · Отзывы: <strong id="master-reviews-count">0</strong></p>
+          </div>
+
+          <div class="master-card">
+            <div class="master-identity master-identity-wide">
+              <div id="master-avatar" class="avatar master-avatar-large">МК</div>
+              <div class="master-identity-info">
+                <h3 id="master-name-heading">Мастер</h3>
+                <div class="contact-row"><span id="master-phone">-</span></div>
+                <div class="master-about-inline">
+                  <h3>О мастере</h3>
+                  <p id="master-bio">-</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="map-card master-map-card" id="master-map-card">
+            <div class="map-pin" id="master-address">-</div>
+            <div class="map-view master-map-view"><iframe id="master-map" title="Карта локации мастера" loading="lazy"></iframe></div>
+            <p id="master-map-hint" class="hint" style="display:none"></p>
+          </div>
+
+          <div id="master-services" class="master-services"></div>
+
+          <div class="reviews">
+            <div class="section-title"><h2>Отзывы</h2></div>
+            <div id="reviews-list" class="reviews-grid"></div>
+
+            <div class="card" id="review-form-card">
+              <h3>Оставить отзыв</h3>
+              <p id="review-form-hint" class="hint">Оставить отзыв можно только после посещения мастер-класса.</p>
+              <label class="field">
+                <span>Оценка</span>
+                <select id="review-rating">
+                  <option value="5">5</option>
+                  <option value="4">4</option>
+                  <option value="3">3</option>
+                  <option value="2">2</option>
+                  <option value="1">1</option>
+                </select>
+              </label>
+              <label class="field"><span>Текст</span><textarea id="review-text" rows="3" placeholder="Напишите впечатления"></textarea></label>
+              <label class="field"><span>Фото/видео</span><input id="review-media-files" type="file" accept="image/*,video/*" multiple /></label>
+              <p id="review-media-info" class="hint">Фото/видео не выбраны (до 3 файлов)</p>
+              <button id="add-review-btn" class="button primary">Отправить отзыв</button>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <footer class="site-footer">
+        <div>© 2026 МК-Маркет</div>
+        <div>Москва</div>
+      </footer>
+    </div>
+
+    <script src="/app.js?v=20260314-46"></script>
+  </body>
+</html>

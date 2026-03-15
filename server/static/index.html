@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>МК-Маркет</title>
+    <link rel="stylesheet" href="/styles.css?v=20260314-46" />
+  </head>
+  <body>
+    <div class="page">
+      <header class="site-header" id="top">
+        <a class="logo" href="/"><span class="logo-mark">МК</span>
+          <div>
+            <strong>МК-Маркет</strong>
+            <span>маркет творческих мастер-классов</span>
+          </div></a>
+        <nav class="nav">
+          <a id="nav-login-link" href="/#auth">Вход</a>
+          <a id="nav-catalog-link" href="/catalog.html" style="display:none">Каталог</a>
+          <a id="nav-my-page-link" href="/master.html" style="display:none">Моя страница</a>
+          <a id="nav-admin-link" class="button ghost" href="/new-workshop.html" style="display:none">Мои мастер-классы</a>
+          <a id="nav-cabinet-avatar" class="nav-avatar" href="/cabinet.html" style="display:none" aria-label="Личный кабинет">ЛК</a>
+        </nav>
+      </header>
+
+      <main>
+        <section class="hero">
+          <div class="hero-text">
+            <p class="eyebrow">творчество рядом</p>
+            <h1>МК-Маркет - твой лучший выбор в поиске мастер-классов.</h1>
+            <p class="lead">Найди мастер-класс по названию или мастера по ФИО. Забронируй слот или встань в очередь.</p>
+            <div class="search-panel hero-search">
+              <label class="field">
+                <span>Поиск</span>
+                <input id="hero-search" type="text" placeholder="Например: Анна Кузнецова или бенто-торт" />
+              </label>
+              <label class="field">
+                <span>Дата</span>
+                <input id="hero-date" type="date" />
+              </label>
+              <label class="field">
+                <span>Фильтр</span>
+                <select id="hero-filter">
+                  <option value="price_asc">По возрастанию цены</option>
+                  <option value="price_desc">По понижению цены</option>
+                  <option value="date">Ближайшие МК</option>
+                </select>
+              </label>
+              <button id="hero-search-btn" class="button primary">Найти</button>
+            </div>
+          </div>
+          <div class="hero-panel">
+            <div class="hero-card">
+              <div class="pill">Старт для пользователей</div>
+              <h3>Найди подходящий мастер-класс</h3>
+              <p>Открой каталог, выбери дату, забронируй удобный слот.</p>
+              <a class="button primary" href="/catalog.html">Открыть каталог</a>
+            </div>
+            <div class="hero-card">
+              <div class="pill">Старт для мастеров</div>
+              <h3>Добавь свои мастер-классы</h3>
+              <p>После входа как мастер откроется раздел «Мои мастер-классы» в шапке.</p>
+              <a class="button primary" href="/new-workshop.html">Открыть «Мои мастер-классы»</a>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="auth">
+          <div class="section-title">
+            <h2>Вход и регистрация</h2>
+            <p>Выберите роль при регистрации: пользователь или мастер/студия.</p>
+          </div>
+          <div id="auth-status" class="hint"></div>
+          <div class="auth-grid">
+            <div class="card">
+              <h3>Вход</h3>
+              <label class="field"><span>Почта</span><input id="login-email" type="email" placeholder="name@mail.ru" /></label>
+              <label class="field"><span>Пароль</span><input id="login-password" type="password" placeholder="******" /></label>
+              <button id="toggle-login-code-btn" class="link-btn" type="button">Забыли пароль? Вход по коду</button>
+              <div id="login-code-wrap" class="login-code-wrap" style="display:none">
+                <label class="field"><span>Почта для кода</span><input id="login-code-email" type="email" placeholder="name@mail.ru" /></label>
+                <label class="field"><span>Код из письма</span><input id="login-code" type="text" placeholder="123456" /></label>
+                <div class="inline">
+                  <button id="request-login-code-btn" class="button ghost" type="button">Отправить код</button>
+                  <button id="login-by-code-btn" class="button" type="button">Войти по коду</button>
+                </div>
+              </div>
+              <button id="login-btn" class="button primary">Войти</button>
+            </div>
+            <div class="card">
+              <h3>Регистрация</h3>
+              <label class="field">
+                <span>Роль</span>
+                <select id="register-role">
+                  <option>Пользователь</option>
+                  <option>Мастер / Студия</option>
+                </select>
+              </label>
+              <label class="field"><span>ФИО</span><input id="register-name" type="text" placeholder="Анна Кузнецова" /></label>
+              <label class="field"><span>Почта</span><input id="register-email" type="email" placeholder="name@mail.ru" /></label>
+              <label class="field"><span>Пароль</span><input id="register-password" type="password" placeholder="******" /></label>
+              <label class="field"><span>Повтор пароля</span><input id="register-password-repeat" type="password" placeholder="******" /></label>
+              <button id="register-btn" class="button primary">Зарегистрироваться</button>
+            </div>
+            <div class="card" id="verify-card" style="display:none">
+              <h3>Подтверждение почты</h3>
+              <p class="hint">Шаг 2: после регистрации введи код из письма.</p>
+              <label class="field"><span>Почта</span><input id="verify-email" type="email" placeholder="name@mail.ru" /></label>
+              <label class="field"><span>Код из письма</span><input id="verify-code" type="text" placeholder="123456" /></label>
+              <button id="verify-email-btn" class="button">Подтвердить</button>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <footer class="site-footer">
+        <div>© 2026 МК-Маркет</div>
+        <div>Москва · support@mkmarket.ru</div>
+      </footer>
+    </div>
+
+    <script src="/app.js?v=20260314-46"></script>
+  </body>
+</html>

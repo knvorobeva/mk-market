@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" role="img" aria-label="Свечи и аромасаше">
+  <defs>
+    <linearGradient id="g3" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#fff2e2"/>
+      <stop offset="100%" stop-color="#ffc18f"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="800" fill="url(#g3)"/>
+  <rect x="200" y="230" width="190" height="330" rx="34" fill="#fff8ee"/>
+  <rect x="460" y="260" width="210" height="300" rx="34" fill="#fff5e8"/>
+  <rect x="760" y="210" width="180" height="350" rx="34" fill="#ffefdc"/>
+  <circle cx="295" cy="210" r="16" fill="#ff8e42"/>
+  <circle cx="565" cy="240" r="16" fill="#ff8e42"/>
+  <circle cx="850" cy="190" r="16" fill="#ff8e42"/>
+  <text x="90" y="140" fill="#6d3a1e" font-family="Georgia, serif" font-size="82" font-weight="700">Свечи</text>
+  <text x="90" y="210" fill="#80492b" font-family="Arial, sans-serif" font-size="40">и аромасаше</text>
+</svg>

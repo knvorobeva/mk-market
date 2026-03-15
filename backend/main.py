@@ -24,10 +24,6 @@ PROJECTS_DIR = os.path.join(DATA_DIR, "projects")
 DB_PATH = os.path.join(DATA_DIR, "app.db")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-70b-versatile")
-AUTH_DISABLED = os.getenv("AUTH_DISABLED", "").lower() in ("1", "true", "yes", "on")
-TINKOFF_API_TOKEN = os.getenv("TINKOFF_API_TOKEN")
-TINKOFF_ACCOUNT_ID = os.getenv("TINKOFF_ACCOUNT_ID")
-TINKOFF_API_TARGET = os.getenv("TINKOFF_API_TARGET", "prod").lower()
 
 os.makedirs(PROJECTS_DIR, exist_ok=True)
 
@@ -35,6 +31,8 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
 
 app = FastAPI()
+
+app.mount("/", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static"), html=True), name="static")
 
 
 def db():
@@ -84,8 +82,6 @@ def create_token(user_id: int, email: str) -> str:
 
 
 def get_current_user(creds: HTTPAuthorizationCredentials = Depends(security)):
-    if AUTH_DISABLED:
-        return {"id": 0, "email": "local"}
     token = creds.credentials
     try:
         payload = jwt.decode(token, APP_SECRET, algorithms=[JWT_ALG])
@@ -102,25 +98,6 @@ def get_current_user(creds: HTTPAuthorizationCredentials = Depends(security)):
     if not row:
         raise HTTPException(status_code=401, detail="User not found")
     return {"id": row["id"], "email": row["email"]}
-
-
-def pb_to_dict(message):
-    from google.protobuf.json_format import MessageToDict
-
-    return MessageToDict(message, preserving_proto_field_name=True)
-
-
-def tinkoff_client():
-    if not TINKOFF_API_TOKEN:
-        raise HTTPException(status_code=500, detail="TINKOFF_API_TOKEN not set")
-    try:
-        from tinkoff.invest import Client
-        from tinkoff.invest.constants import INVEST_GRPC_API, INVEST_GRPC_API_SANDBOX
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"tinkoff-investments not available: {exc}")
-
-    target = INVEST_GRPC_API_SANDBOX if TINKOFF_API_TARGET in ("sandbox", "demo", "test") else INVEST_GRPC_API
-    return Client(TINKOFF_API_TOKEN, target=target)
 
 
 @app.post("/api/auth/register")
@@ -164,35 +141,6 @@ async def login(payload: dict):
 @app.get("/api/me")
 async def me(user=Depends(get_current_user)):
     return user
-
-
-@app.get("/api/config")
-async def config():
-    return {"auth_disabled": AUTH_DISABLED}
-
-
-@app.get("/api/ti/overview")
-async def ti_overview():
-    with tinkoff_client() as client:
-        accounts_resp = client.users.get_accounts()
-        accounts = accounts_resp.accounts
-        account_id = TINKOFF_ACCOUNT_ID or (accounts[0].id if accounts else None)
-        if not account_id:
-            raise HTTPException(status_code=500, detail="No accounts available")
-
-        portfolio = client.operations.get_portfolio(account_id=account_id)
-        positions = client.operations.get_positions(account_id=account_id)
-        withdraw_limits = client.operations.get_withdraw_limits(account_id=account_id)
-        orders = client.orders.get_orders(account_id=account_id)
-
-    return {
-        "account_id": account_id,
-        "accounts": pb_to_dict(accounts_resp),
-        "portfolio": pb_to_dict(portfolio),
-        "positions": pb_to_dict(positions),
-        "withdraw_limits": pb_to_dict(withdraw_limits),
-        "orders": pb_to_dict(orders),
-    }
 
 
 def project_root(project_id: int, user_id: int) -> str:
@@ -407,6 +355,3 @@ async def ai_patch(project_id: int, payload: dict, user=Depends(get_current_user
     with open(full, "w", encoding="utf-8") as f:
         f.write(updated)
     return {"ok": True, "diff": diff}
-
-
-app.mount("/", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static"), html=True), name="static")

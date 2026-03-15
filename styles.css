@@ -271,10 +271,6 @@ body {
   box-shadow: 0 16px 30px rgba(242, 75, 143, 0.16);
 }
 
-.hero-search {
-  margin-top: 18px;
-}
-
 .field {
   display: grid;
   gap: 6px;
@@ -308,8 +304,6 @@ body {
   gap: 14px;
   box-shadow: 0 16px 30px rgba(242, 75, 143, 0.12);
   transition: transform 0.2s ease;
-  text-decoration: none;
-  color: inherit;
 }
 
 .mk-card:hover {

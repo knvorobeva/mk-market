@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>МК-Маркет · Каталог</title>
+    <link rel="stylesheet" href="/styles.css?v=20260314-46" />
+  </head>
+  <body>
+    <div class="page">
+      <header class="site-header">
+        <a class="logo" href="/"><span class="logo-mark">МК</span>
+          <div><strong>МК-Маркет</strong><span>каталог мастер-классов</span></div></a>
+        <nav class="nav">
+          <a id="nav-login-link" href="/#auth">Вход</a>
+          <a id="nav-catalog-link" href="/catalog.html" style="display:none">Каталог</a>
+          <a id="nav-my-page-link" href="/master.html" style="display:none">Моя страница</a>
+          <a id="nav-admin-link" class="button ghost" href="/new-workshop.html" style="display:none">Мои мастер-классы</a>
+          <a id="nav-cabinet-avatar" class="nav-avatar" href="/cabinet.html" style="display:none" aria-label="Личный кабинет">ЛК</a>
+        </nav>
+      </header>
+
+      <main>
+        <section class="section" id="catalog">
+          <div class="section-title">
+            <h2>Каталог мастер-классов</h2>
+          </div>
+          <div class="search-panel">
+            <label class="field"><span>Поиск</span><input id="catalog-search" type="text" placeholder="бенто-торт" /></label>
+            <label class="field"><span>Дата</span><input id="catalog-date" type="date" /></label>
+            <label class="field">
+              <span>Вид МК</span>
+              <select id="catalog-type">
+                <option value="">Любой</option>
+                <option value="Групповой МК">Групповой МК</option>
+                <option value="Индивидуальный МК">Индивидуальный МК</option>
+                <option value="МК-Свидание">МК-Свидание</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Фильтр</span>
+              <select id="catalog-filter">
+                <option value="price_asc">По возрастанию цены</option>
+                <option value="price_desc">По понижению цены</option>
+                <option value="rating_desc">По рейтингу мастера</option>
+                <option value="date">Ближайшие МК</option>
+              </select>
+            </label>
+            <button id="catalog-search-btn" class="button primary">Найти</button>
+          </div>
+
+          <div id="catalog-list" class="catalog"></div>
+        </section>
+      </main>
+
+      <footer class="site-footer">
+        <div>© 2026 МК-Маркет</div>
+        <div>Москва</div>
+      </footer>
+    </div>
+
+    <script src="/app.js?v=20260314-46"></script>
+  </body>
+</html>

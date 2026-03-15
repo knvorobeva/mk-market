@@ -1,2 +1,17 @@
 .codex/
 .pi-sync/
+
+# Local service/runtime state
+server/.env
+server/.venv/
+server/__pycache__/
+server/uvicorn.log
+server/app.db
+server/app.db*
+server/backups/
+
+# Generated files
+**/__pycache__/
+*.pyc
+*.bak
+*.bak.*

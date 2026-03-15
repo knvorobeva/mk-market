@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>МК-Маркет · Кабинет</title>
+    <link rel="stylesheet" href="/styles.css?v=20260314-25" />
+  </head>
+  <body>
+    <div class="page" id="cabinet-page">
+      <header class="site-header">
+        <a class="logo" href="/"><span class="logo-mark">МК</span>
+          <div><strong>МК-Маркет</strong><span>маркет творческих мастер-классов</span></div></a>
+        <nav class="nav">
+          <a id="nav-login-link" href="/#auth">Вход</a>
+          <a id="nav-catalog-link" href="/catalog.html" style="display:none">Каталог</a>
+          <a id="nav-my-page-link" href="/master.html" style="display:none">Моя страница</a>
+          <a id="nav-admin-link" class="button ghost" href="/new-workshop.html" style="display:none">Мои мастер-классы</a>
+          <a id="nav-cabinet-avatar" class="nav-avatar" href="/cabinet.html" style="display:none" aria-label="Личный кабинет">ЛК</a>
+        </nav>
+      </header>
+
+      <main>
+        <section class="section">
+          <div class="section-title">
+            <h2>Личный кабинет</h2>
+            <p id="cabinet-auth-message" class="hint"></p>
+          </div>
+          <button id="logout-btn" class="button ghost cabinet-logout" style="display:none">Выйти</button>
+
+          <div class="account-grid">
+            <div class="card cabinet-form-card">
+              <h3>Профиль</h3>
+              <label class="field"><span>Имя</span><input id="profile-name" type="text" /></label>
+              <label class="field"><span>Почта</span><input id="profile-email" type="email" /></label>
+              <label class="field"><span>Телефон</span><input id="profile-phone" type="text" /></label>
+              <label class="field"><span>Фото профиля</span><input id="profile-avatar-file" type="file" accept="image/*" /></label>
+              <p id="profile-avatar-file-info" class="hint">Фото не выбрано</p>
+              <label id="profile-bio-field" class="field"><span>О себе</span><input id="profile-bio" type="text" /></label>
+              <label id="profile-address-field" class="field"><span>Адрес</span><input id="profile-address" type="text" /></label>
+              <button id="save-profile-btn" class="button primary cabinet-action-btn">Сохранить изменения</button>
+            </div>
+
+            <div class="card cabinet-form-card">
+              <h3>Смена пароля</h3>
+              <label class="field"><span>Текущий пароль</span><input id="password-current" type="password" /></label>
+              <label class="field"><span>Новый пароль</span><input id="password-new" type="password" /></label>
+              <label class="field"><span>Повтор нового пароля</span><input id="password-new-repeat" type="password" /></label>
+              <button id="change-password-btn" class="button primary cabinet-action-btn">Сменить пароль</button>
+            </div>
+
+            <div class="card bookings-card">
+              <h3>Мои записи</h3>
+              <div id="my-bookings-list"></div>
+              <p class="hint">Отмена доступна минимум за 24 часа до старта МК.</p>
+            </div>
+          </div>
+        </section>
+
+      </main>
+
+      <footer class="site-footer">
+        <div>© 2026 МК-Маркет</div>
+        <div>Москва</div>
+      </footer>
+    </div>
+
+    <script src="/app.js?v=20260314-25"></script>
+  </body>
+</html>

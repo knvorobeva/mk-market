@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>МК-Маркет · Мои мастер-классы</title>
+    <link rel="stylesheet" href="/styles.css?v=20260314-46" />
+  </head>
+  <body>
+    <div class="page" id="admin-page">
+      <header class="site-header">
+        <a class="logo" href="/"><span class="logo-mark">МК</span>
+          <div><strong>МК-Маркет</strong><span>управление мастер-классами</span></div></a>
+        <nav class="nav">
+          <a id="nav-login-link" href="/#auth">Вход</a>
+          <a id="nav-catalog-link" href="/catalog.html" style="display:none">Каталог</a>
+          <a id="nav-my-page-link" href="/master.html" style="display:none">Моя страница</a>
+          <a id="nav-admin-link" class="button ghost" href="/new-workshop.html" style="display:none">Мои мастер-классы</a>
+          <a id="nav-cabinet-avatar" class="nav-avatar" href="/cabinet.html" style="display:none" aria-label="Личный кабинет">ЛК</a>
+        </nav>
+      </header>
+
+      <main>
+        <section class="section">
+          <div class="section-title">
+            <h2>Мои мастер-классы</h2>
+            <p id="admin-auth-message" class="hint"></p>
+          </div>
+        </section>
+
+        <section class="section" id="admin-wrap">
+          <div class="admin-grid">
+            <div class="card">
+              <h3>Создать мастер-класс</h3>
+              <label class="field"><span>Название</span><input id="new-workshop-title" type="text" /></label>
+              <label class="field"><span>Описание</span><textarea id="new-workshop-description" rows="3"></textarea></label>
+              <label class="field"><span>Локация</span><input id="new-workshop-location" type="text" /></label>
+              <label class="field"><span>Длительность (мин)</span><input id="new-workshop-duration" type="number" /></label>
+              <label class="field"><span>Фото мастер-класса</span><input id="new-workshop-image-file" type="file" accept="image/*" /></label>
+              <p id="new-workshop-image-info" class="hint">Фото не выбрано</p>
+              <button id="create-workshop-btn" class="button primary">Создать МК</button>
+            </div>
+
+            <div class="card">
+              <h3>Добавить слот</h3>
+              <label class="field"><span>Мастер-класс</span><select id="slot-workshop-id"></select></label>
+              <label class="field">
+                <span>Вид МК</span>
+                <select id="slot-workshop-type">
+                  <option value="Групповой МК">Групповой МК</option>
+                  <option value="Индивидуальный МК">Индивидуальный МК</option>
+                  <option value="МК-Свидание">МК-Свидание</option>
+                </select>
+              </label>
+              <label class="field"><span>Цена (₽)</span><input id="slot-price" type="number" min="1" step="1" /></label>
+              <label class="field"><span>Начало</span><input id="slot-start" type="datetime-local" min="2026-01-01T00:00" max="2026-12-31T23:59" /></label>
+              <label class="field"><span>Количество человек</span><input id="slot-seats" type="number" /></label>
+              <button id="create-slot-btn" class="button primary">Добавить слот</button>
+            </div>
+
+            <div class="card">
+              <h3>Мои мастер-классы</h3>
+              <div id="admin-workshops"></div>
+            </div>
+
+            <div class="card">
+              <h3>Мои слоты</h3>
+              <div id="admin-slots"></div>
+            </div>
+
+            <div class="card">
+              <h3>Очередь</h3>
+              <div id="admin-queue"></div>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <footer class="site-footer">
+        <div>© 2026 МК-Маркет</div>
+        <div>Москва</div>
+      </footer>
+    </div>
+
+    <script src="/app.js?v=20260314-46"></script>
+  </body>
+</html>

@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>МК-Маркет · Карточка МК</title>
+    <link rel="stylesheet" href="/styles.css?v=20260314-46" />
+  </head>
+  <body>
+    <div class="page" id="workshop-container">
+      <header class="site-header">
+        <a class="logo" href="/"><span class="logo-mark">МК</span>
+          <div><strong>МК-Маркет</strong><span>карточка мастер-класса</span></div></a>
+        <nav class="nav">
+          <a id="nav-login-link" href="/#auth">Вход</a>
+          <a id="nav-catalog-link" href="/catalog.html" style="display:none">Каталог</a>
+          <a id="nav-my-page-link" href="/master.html" style="display:none">Моя страница</a>
+          <a id="nav-admin-link" class="button ghost" href="/new-workshop.html" style="display:none">Мои мастер-классы</a>
+          <a id="nav-cabinet-avatar" class="nav-avatar" href="/cabinet.html" style="display:none" aria-label="Личный кабинет">ЛК</a>
+        </nav>
+      </header>
+
+      <main>
+        <section class="section" id="booking">
+          <div class="section-title">
+            <h2 id="workshop-title">Мастер-класс</h2>
+            <p id="workshop-desc">Описание мастер-класса</p>
+          </div>
+
+          <div class="booking-card">
+            <div class="booking-media">
+              <div id="workshop-photo"><div class="mk-photo large">МК</div></div>
+              <div class="booking-desc">
+                <ul>
+                  <li>Вид МК: <strong id="workshop-type">-</strong></li>
+                  <li>Локация: <strong id="workshop-location">-</strong></li>
+                  <li>Мастер: <a id="workshop-master-link" class="master-link" href="/master.html">-</a></li>
+                  <li>Продолжительность: <strong id="workshop-duration">-</strong></li>
+                </ul>
+              </div>
+            </div>
+
+            <label class="field">
+              <span>Количество участников</span>
+              <select id="guests"></select>
+            </label>
+
+            <div id="slots-list" class="booking-form"></div>
+            <div id="booking-result" class="inline"></div>
+          </div>
+        </section>
+      </main>
+
+      <footer class="site-footer">
+        <div>© 2026 МК-Маркет</div>
+        <div>Москва</div>
+      </footer>
+    </div>
+
+    <script src="/app.js?v=20260314-46"></script>
+  </body>
+</html>
