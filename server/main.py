@@ -13,13 +13,11 @@ from email.message import EmailMessage
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from urllib.parse import urlencode
-
 import jwt
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Response, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
-from passlib.context import CryptContext
-
+from passlib.contex import CryptContext
 APP_SECRET = os.getenv("APP_SECRET", "change-me")
 JWT_ALG = "HS256"
 TOKEN_EXPIRE_HOURS = 24
@@ -33,36 +31,24 @@ SMTP_STARTTLS = os.getenv("SMTP_STARTTLS", "1") in ("1", "true", "yes", "on")
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
 GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "")
-
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 security = HTTPBearer()
 security_optional = HTTPBearer(auto_error=False)
 app = FastAPI()
-
-
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
-
-
 def utc_now_iso() -> str:
     return utc_now().isoformat()
-
-
 def parse_dt(value: str) -> datetime:
     dt = datetime.fromisoformat(value)
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(timezone.utc)
-
-
 WORKSHOP_TYPE_VALUES = ("Групповой МК", "Индивидуальный МК", "МК-Свидание")
-
-
 def normalize_workshop_type(value: str, description: str = "") -> str:
     text = (value or "").strip()
     if text in WORKSHOP_TYPE_VALUES:
         return text
-
     source = f"{text} {description or ''}".casefold()
     if "свидан" in source:
         return "МК-Свидание"
@@ -71,8 +57,6 @@ def normalize_workshop_type(value: str, description: str = "") -> str:
     if "груп" in source:
         return "Групповой МК"
     return "Групповой МК"
-
-
 def normalize_workshop_capacity(workshop_type: str, capacity_value: int) -> int:
     normalized_type = normalize_workshop_type(workshop_type)
     if normalized_type == "Индивидуальный МК":
@@ -80,38 +64,27 @@ def normalize_workshop_capacity(workshop_type: str, capacity_value: int) -> int:
     if normalized_type == "МК-Свидание":
         return 2
     return max(1, int(capacity_value or 6))
-
-
 def workshop_types_from_csv(raw_value: str, fallback_type: str = "") -> list[str]:
     raw_parts = [str(part or "").strip() for part in str(raw_value or "").split(",")]
     parts = [part for part in raw_parts if part]
     if not parts and fallback_type:
         parts = [str(fallback_type).strip()]
-
     seen = set()
     for part in parts:
         seen.add(normalize_workshop_type(part))
-
     if not seen:
         seen.add(normalize_workshop_type(fallback_type or "Групповой МК"))
-
     ordered = [value for value in WORKSHOP_TYPE_VALUES if value in seen]
     return ordered
-
-
 def workshop_types_label(workshop_types: list[str]) -> str:
     items = [str(item or "").strip() for item in workshop_types if str(item or "").strip()]
     return ", ".join(items) if items else "Групповой МК"
-
-
 def db():
     conn = sqlite3.connect(DB_PATH, timeout=20)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA busy_timeout = 20000")
     return conn
-
-
 def user_view(row: sqlite3.Row | dict) -> dict:
     return {
         "id": row["id"],
@@ -123,8 +96,6 @@ def user_view(row: sqlite3.Row | dict) -> dict:
         "bio": row["bio"],
         "address": row["address"],
     }
-
-
 def create_token(user_id: int, email: str) -> str:
     payload = {
         "sub": str(user_id),
@@ -132,12 +103,8 @@ def create_token(user_id: int, email: str) -> str:
         "exp": utc_now() + timedelta(hours=TOKEN_EXPIRE_HOURS),
     }
     return jwt.encode(payload, APP_SECRET, algorithm=JWT_ALG)
-
-
 def generate_verify_code(length: int = 6) -> str:
     return "".join(random.choice(string.digits) for _ in range(length))
-
-
 def log_action(user_id: int, action: str, payload: Optional[dict] = None):
     conn = None
     try:
@@ -152,13 +119,9 @@ def log_action(user_id: int, action: str, payload: Optional[dict] = None):
     finally:
         if conn:
             conn.close()
-
-
 def random_state_token(length: int = 40) -> str:
     alphabet = string.ascii_letters + string.digits
     return "".join(random.choice(alphabet) for _ in range(length))
-
-
 def json_request(url: str, method: str = "GET", data: Optional[dict] = None, headers: Optional[dict] = None):
     raw = json.dumps(data).encode("utf-8") if data is not None else None
     req = urllib.request.Request(url, data=raw, method=method, headers=headers or {})
@@ -172,22 +135,16 @@ def json_request(url: str, method: str = "GET", data: Optional[dict] = None, hea
         return exc.code, payload
     except Exception as exc:
         return 599, {"detail": str(exc)}
-
-
 def run_safe_task(label: str, func, *args):
     try:
         func(*args)
     except Exception as exc:
         print(f"[BACKGROUND-FAIL] {label}: {exc}")
-
-
 def enqueue_task(background_tasks: Optional[BackgroundTasks], label: str, func, *args):
     if background_tasks is None:
         run_safe_task(label, func, *args)
         return
     background_tasks.add_task(run_safe_task, label, func, *args)
-
-
 def sync_user_google_bookings(user_id: int):
     conn = db()
     cur = conn.cursor()
