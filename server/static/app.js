@@ -179,7 +179,6 @@ function autoFitAvatarImage(img) {
         img.style.transform = "";
       }
     } catch {
-      // skip autofit if canvas analysis is unavailable (e.g. cross-origin restrictions)
     }
   };
 
@@ -977,8 +976,6 @@ function cropAvatarDataUrl(dataUrl, outputSize = 512) {
             (max, c) => Math.max(max, Math.abs(c[0] - avg[0]) + Math.abs(c[1] - avg[1]) + Math.abs(c[2] - avg[2])),
             0
           );
-
-          // Рамку режем только когда углы реально близки по цвету.
           if (cornerSpread > 95) return null;
           const tolerance = 42;
           const isBorder = (idx) => {

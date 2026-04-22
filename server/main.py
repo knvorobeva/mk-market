@@ -901,7 +901,6 @@ def init_db():
         if not has_column(table, column):
             cur.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
-    # Online migration for previously created tables
     add_column_if_missing("users", "updated_at", "TEXT")
     add_column_if_missing("users", "email_verified", "INTEGER NOT NULL DEFAULT 1")
     add_column_if_missing("users", "email_verify_code", "TEXT")
