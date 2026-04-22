@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>МК-Маркет · Кабинет</title>
-    <link rel="stylesheet" href="/styles.css?v=20260314-46" />
+    <link rel="stylesheet" href="/styles.css?v=20260421-63" />
   </head>
   <body>
     <div class="page" id="cabinet-page">
@@ -29,24 +29,26 @@
           <button id="logout-btn" class="button ghost cabinet-logout" style="display:none">Выйти</button>
 
           <div class="account-grid">
-            <div class="card cabinet-form-card">
-              <h3>Профиль</h3>
-              <label class="field"><span>Имя</span><input id="profile-name" type="text" /></label>
-              <label class="field"><span>Почта</span><input id="profile-email" type="email" /></label>
-              <label class="field"><span>Телефон</span><input id="profile-phone" type="text" /></label>
-              <label class="field"><span>Фото профиля</span><input id="profile-avatar-file" type="file" accept="image/*" /></label>
-              <p id="profile-avatar-file-info" class="hint">Фото не выбрано</p>
-              <label id="profile-bio-field" class="field"><span>О себе</span><input id="profile-bio" type="text" /></label>
-              <label id="profile-address-field" class="field"><span>Адрес</span><input id="profile-address" type="text" /></label>
-              <button id="save-profile-btn" class="button primary cabinet-action-btn">Сохранить изменения</button>
-            </div>
+            <div class="account-form-column">
+              <div class="card cabinet-form-card">
+                <h3>Профиль</h3>
+                <label class="field"><span>Имя</span><input id="profile-name" type="text" /></label>
+                <label class="field"><span>Почта</span><input id="profile-email" type="email" /></label>
+                <label class="field"><span>Телефон</span><input id="profile-phone" type="text" /></label>
+                <label class="field"><span>Фото профиля</span><input id="profile-avatar-file" type="file" accept="image/*" /></label>
+                <p id="profile-avatar-file-info" class="hint">Фото не выбрано</p>
+                <label id="profile-bio-field" class="field"><span>О себе</span><input id="profile-bio" type="text" /></label>
+                <label id="profile-address-field" class="field"><span>Адрес</span><input id="profile-address" type="text" /></label>
+                <button id="save-profile-btn" class="button primary cabinet-action-btn">Сохранить изменения</button>
+              </div>
 
-            <div class="card cabinet-form-card">
-              <h3>Смена пароля</h3>
-              <label class="field"><span>Текущий пароль</span><input id="password-current" type="password" /></label>
-              <label class="field"><span>Новый пароль</span><input id="password-new" type="password" /></label>
-              <label class="field"><span>Повтор нового пароля</span><input id="password-new-repeat" type="password" /></label>
-              <button id="change-password-btn" class="button primary cabinet-action-btn">Сменить пароль</button>
+              <div class="card cabinet-form-card">
+                <h3>Смена пароля</h3>
+                <label class="field"><span>Текущий пароль</span><input id="password-current" type="password" /></label>
+                <label class="field"><span>Новый пароль</span><input id="password-new" type="password" /></label>
+                <label class="field"><span>Повтор нового пароля</span><input id="password-new-repeat" type="password" /></label>
+                <button id="change-password-btn" class="button primary cabinet-action-btn">Сменить пароль</button>
+              </div>
             </div>
 
             <div class="card bookings-card">
@@ -70,6 +72,6 @@
       </footer>
     </div>
 
-    <script src="/app.js?v=20260314-46"></script>
+    <script src="/app.js?v=20260421-63"></script>
   </body>
 </html>

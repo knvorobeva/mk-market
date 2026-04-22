@@ -80,10 +80,10 @@ a:hover {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 24px;
-  padding: 14px 16px;
+  gap: 30px;
+  padding: 18px 22px;
   margin-bottom: 24px;
-  border-radius: 18px;
+  border-radius: 22px;
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.72);
   backdrop-filter: blur(10px);
@@ -115,9 +115,9 @@ a:hover {
 .logo-mark {
   display: grid;
   place-items: center;
-  width: 46px;
-  height: 46px;
-  border-radius: 16px;
+  width: 54px;
+  height: 54px;
+  border-radius: 18px;
   background: linear-gradient(135deg, var(--accent), var(--accent-soft));
   color: #fff !important;
   font-weight: 800;
@@ -127,14 +127,14 @@ a:hover {
 
 .logo strong {
   display: block;
-  font-size: 18px;
+  font-size: 24px;
   font-weight: 700;
   text-decoration: none !important;
   color: var(--ink);
 }
 
 .logo > div > span {
-  font-size: 12px;
+  font-size: 16px;
   color: var(--muted);
   text-decoration: none !important;
 }
@@ -154,8 +154,8 @@ a:hover {
   color: var(--ink);
   text-decoration: none;
   font-weight: 600;
-  font-size: 14px;
-  padding: 8px 12px;
+  font-size: 16px;
+  padding: 10px 16px;
   border-radius: 12px;
   border: 1px solid transparent;
 }
@@ -171,19 +171,25 @@ a:hover {
 }
 
 .nav-avatar {
-  width: 42px;
-  height: 42px;
-  border-radius: 10px;
+  width: 82px;
+  height: 82px;
+  border-radius: 20px;
   border: 1px solid #f2c3d6;
   background: #fff;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  display: inline-grid;
+  place-items: center;
+  padding: 0 !important;
   overflow: hidden;
   color: var(--accent-dark);
   font-size: 13px;
   font-weight: 700;
   box-shadow: 0 8px 20px rgba(234, 75, 149, 0.18);
+  line-height: 0;
+  flex: 0 0 auto;
+}
+
+.nav a.nav-avatar {
+  padding: 0 !important;
 }
 
 .nav-avatar img {
@@ -247,7 +253,7 @@ a:hover {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 30px;
-  align-items: center;
+  align-items: stretch;
   padding: 34px;
   background: var(--bg-soft);
   border-radius: var(--radius);
@@ -273,6 +279,12 @@ a:hover {
 .hero-panel {
   position: relative;
   z-index: 1;
+}
+
+.hero-text {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
 }
 
 .hero-text h1 {
@@ -399,7 +411,7 @@ a:hover {
 }
 
 .hero-search {
-  margin-top: 18px;
+  margin-top: 0;
 }
 
 .field {
@@ -788,24 +800,32 @@ a:hover {
 
 .review-media-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  justify-items: start;
+}
+
+.review-edit-media-preview {
+  min-height: 40px;
 }
 
 .review-media-item {
   display: block;
+  width: min(100%, 380px);
   border-radius: 10px;
   overflow: hidden;
   border: 1px solid rgba(234, 75, 149, 0.2);
-  background: #fff5fa;
+  background: #ffffff;
 }
 
 .review-media-item img,
 .review-media-item video {
   width: 100%;
-  height: 140px;
-  object-fit: cover;
+  aspect-ratio: 4 / 3;
+  max-height: 300px;
+  object-fit: contain;
   display: block;
+  background: #fff5fa;
 }
 
 .booking-card {
@@ -896,6 +916,35 @@ a:hover {
   gap: 18px;
 }
 
+.account-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+}
+
+.account-grid > .card,
+.account-form-column {
+  min-width: 0;
+}
+
+.account-form-column {
+  display: grid;
+  gap: 18px;
+  align-self: start;
+}
+
+.auth-grid > .card {
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+}
+
+.auth-grid > .card .button.primary {
+  width: 100%;
+  min-height: 64px;
+  margin-top: auto;
+  font-size: 16px;
+}
+
 .cabinet-logout {
   display: flex;
   position: static;
@@ -913,11 +962,11 @@ a:hover {
 }
 
 .cabinet-action-btn {
-  width: 100%;
-  height: 64px;
-  min-height: 64px;
+  width: min(100%, 346px);
+  height: 56px;
+  min-height: 56px;
   margin: 0;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 800;
   line-height: 1;
 }
@@ -929,7 +978,7 @@ a:hover {
 }
 
 .cabinet-form-card .cabinet-action-btn {
-  margin-top: auto;
+  margin-top: 4px;
 }
 
 .admin-grid {
@@ -956,8 +1005,11 @@ a:hover {
 }
 
 .bookings-card {
-  display: grid;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
   gap: 12px;
+  min-width: 0;
 }
 
 .booking-item {
@@ -965,10 +1017,145 @@ a:hover {
   justify-content: space-between;
   gap: 12px;
   align-items: center;
+  flex-wrap: wrap;
+  min-width: 0;
   padding: 12px;
   background: #fff5fa;
   border-radius: 14px;
   border: 1px solid rgba(234, 75, 149, 0.17);
+}
+
+.booking-item > div {
+  min-width: 0;
+}
+
+.booking-item span,
+.booking-item strong {
+  overflow-wrap: anywhere;
+}
+
+.booking-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  width: min(100%, 420px);
+  align-items: stretch;
+}
+
+.booking-actions .button {
+  width: 100%;
+  min-height: 52px;
+  justify-content: center;
+  text-align: center;
+  padding-inline: 14px;
+}
+
+.booking-action-wide {
+  grid-column: 1 / -1;
+}
+
+.master-slot-item {
+  align-items: flex-start;
+}
+
+.master-slot-item .booking-main {
+  display: grid;
+  gap: 6px;
+  flex: 1 1 300px;
+}
+
+.master-slot-item .booking-actions {
+  flex: 0 0 auto;
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  width: min(100%, 240px);
+}
+
+.master-slot-item .booking-actions .button {
+  width: 100%;
+}
+
+@media (max-width: 1180px) {
+  .master-slot-item .booking-actions {
+    width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .booking-actions {
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .booking-action-wide {
+    grid-column: auto;
+  }
+}
+
+.my-review-item {
+  align-items: flex-start;
+}
+
+.my-review-item > div {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+}
+
+.my-review-item p {
+  margin: 0;
+}
+
+.my-review-actions {
+  margin-top: 6px;
+  align-items: center;
+}
+
+.review-target {
+  border-color: rgba(234, 75, 149, 0.55) !important;
+  box-shadow: 0 0 0 3px rgba(234, 75, 149, 0.18);
+}
+
+.booking-move-summary {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #fff5fa;
+  border: 1px solid rgba(234, 75, 149, 0.2);
+}
+
+.booking-move-options {
+  display: grid;
+  gap: 8px;
+}
+
+.booking-move-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(234, 75, 149, 0.22);
+  background: #fff7fb;
+  cursor: pointer;
+}
+
+.booking-move-option input {
+  margin-top: 4px;
+}
+
+.booking-move-option > div {
+  display: grid;
+  gap: 2px;
+}
+
+.slot-people-list {
+  display: grid;
+  gap: 8px;
 }
 
 .queue-item {
@@ -1167,6 +1354,10 @@ body.modal-open {
   .admin-grid {
     grid-template-columns: 1fr;
   }
+
+  .account-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .inline {
@@ -1210,9 +1401,11 @@ body.modal-open {
 #admin-workshops,
 #admin-slots,
 #admin-queue,
-#my-bookings-list {
+#my-bookings-list,
+#my-reviews-list {
   display: grid;
   gap: 10px;
+  min-width: 0;
 }
 
 .nav .hint {

@@ -253,7 +253,7 @@ a:hover {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 30px;
-  align-items: center;
+  align-items: stretch;
   padding: 34px;
   background: var(--bg-soft);
   border-radius: var(--radius);
@@ -279,6 +279,12 @@ a:hover {
 .hero-panel {
   position: relative;
   z-index: 1;
+}
+
+.hero-text {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
 }
 
 .hero-text h1 {
@@ -405,7 +411,7 @@ a:hover {
 }
 
 .hero-search {
-  margin-top: 18px;
+  margin-top: 0;
 }
 
 .field {
@@ -910,6 +916,35 @@ a:hover {
   gap: 18px;
 }
 
+.account-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+}
+
+.account-grid > .card,
+.account-form-column {
+  min-width: 0;
+}
+
+.account-form-column {
+  display: grid;
+  gap: 18px;
+  align-self: start;
+}
+
+.auth-grid > .card {
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+}
+
+.auth-grid > .card .button.primary {
+  width: 100%;
+  min-height: 64px;
+  margin-top: auto;
+  font-size: 16px;
+}
+
 .cabinet-logout {
   display: flex;
   position: static;
@@ -927,11 +962,11 @@ a:hover {
 }
 
 .cabinet-action-btn {
-  width: 100%;
-  height: 64px;
-  min-height: 64px;
+  width: min(100%, 346px);
+  height: 56px;
+  min-height: 56px;
   margin: 0;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 800;
   line-height: 1;
 }
@@ -943,7 +978,7 @@ a:hover {
 }
 
 .cabinet-form-card .cabinet-action-btn {
-  margin-top: auto;
+  margin-top: 4px;
 }
 
 .admin-grid {
@@ -999,6 +1034,26 @@ a:hover {
   overflow-wrap: anywhere;
 }
 
+.booking-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  width: min(100%, 420px);
+  align-items: stretch;
+}
+
+.booking-actions .button {
+  width: 100%;
+  min-height: 52px;
+  justify-content: center;
+  text-align: center;
+  padding-inline: 14px;
+}
+
+.booking-action-wide {
+  grid-column: 1 / -1;
+}
+
 .master-slot-item {
   align-items: flex-start;
 }
@@ -1026,6 +1081,17 @@ a:hover {
 @media (max-width: 1180px) {
   .master-slot-item .booking-actions {
     width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .booking-actions {
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .booking-action-wide {
+    grid-column: auto;
   }
 }
 
@@ -1286,6 +1352,10 @@ body.modal-open {
 
 @media (max-width: 1120px) {
   .admin-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .account-grid {
     grid-template-columns: 1fr;
   }
 }

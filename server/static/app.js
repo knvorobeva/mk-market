@@ -48,6 +48,7 @@ function localizeErrorMessage(message) {
     { match: "booking not found", text: "Запись не найдена." },
     { match: "invalid credentials", text: "Неверная почта или пароль." },
     { match: "email not verified", text: "Сначала подтвердите почту кодом из письма." },
+    { match: "too many code attempts", text: "Слишком много неверных попыток. Попробуйте снова через 15 минут." },
     { match: "title required", text: "Укажи название мастер-класса." },
     { match: "price, duration_min, capacity must be > 0", text: "Цена, длительность и количество человек должны быть больше 0." },
     { match: "price must be > 0", text: "Цена должна быть больше 0." },
@@ -78,6 +79,11 @@ function localizeErrorMessage(message) {
     { match: "too many media items", text: "Можно прикрепить не более 3 фото/видео." },
     { match: "only image/video data urls are allowed", text: "Разрешены только фото и видео файлы." },
     { match: "media item is too large", text: "Один из файлов слишком большой." },
+    { match: "self review forbidden", text: "Нельзя оставить отзыв самому себе." },
+    { match: "review allowed only for customer of this master", text: "Отзыв может оставить только человек, который был именно у этого мастера." },
+    { match: "review allowed only after completed booking", text: "Оставить отзыв можно только после посещения мастер-класса." },
+    { match: "review already exists for completed booking", text: "Все доступные отзывы этому мастеру уже оставлены." },
+    { match: "review login required", text: "Войдите, чтобы оставить отзыв." },
   ];
   for (const item of map) {
     if (msg.includes(item.match)) return item.text;
@@ -1162,10 +1168,57 @@ function googleCalendarUrlFromBooking(booking) {
   return `https://calendar.google.com/calendar/render?${params.toString()}`;
 }
 
-function withAuthQuery(url) {
-  if (!state.token) return url;
-  const sep = url.includes("?") ? "&" : "?";
-  return `${url}${sep}access_token=${encodeURIComponent(state.token)}`;
+function parseDownloadFilename(disposition, fallbackName = "mk-market.ics") {
+  const raw = String(disposition || "");
+  const utf8Match = raw.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1]);
+    } catch {
+      return utf8Match[1];
+    }
+  }
+  const plainMatch = raw.match(/filename=\"?([^\";]+)\"?/i);
+  if (plainMatch?.[1]) return plainMatch[1];
+  return fallbackName;
+}
+
+async function downloadAuthorizedCalendar(path, fallbackName = "mk-market.ics") {
+  const result = await api(path);
+  const content = String(result?.text || "");
+  const headers = result?.headers;
+  const filename = parseDownloadFilename(headers?.get?.("Content-Disposition"), fallbackName);
+  const blob = new Blob([content], { type: "text/calendar;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function bindCalendarDownloadButtons(root = document) {
+  root.querySelectorAll("[data-download-ics]").forEach((btn) => {
+    if (btn.dataset.downloadBound === "1") return;
+    btn.dataset.downloadBound = "1";
+    btn.addEventListener("click", async () => {
+      const path = btn.getAttribute("data-download-ics") || "";
+      const fallbackName = btn.getAttribute("data-download-filename") || "mk-market.ics";
+      const originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "Скачиваем...";
+      try {
+        await downloadAuthorizedCalendar(path, fallbackName);
+      } catch (e) {
+        show(e.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
+      }
+    });
+  });
 }
 
 function setupMasterCabinetAutoRefresh(enabled) {
@@ -1229,6 +1282,14 @@ function parseRole(roleRaw) {
     return "master";
   }
   return "user";
+}
+
+function getPrimaryRouteForRole(roleRaw) {
+  return parseRole(roleRaw) === "master" ? "/new-workshop.html" : "/catalog.html";
+}
+
+function getPrimaryRouteForCurrentUser() {
+  return getPrimaryRouteForRole(state.me?.role || "");
 }
 
 function authHeaders() {
@@ -1295,6 +1356,9 @@ function updateNavUser() {
         .map((v) => v[0]?.toUpperCase() || "")
         .join("");
       cabinetAvatar.innerHTML = avatarBlock(state.me.avatar_url, initials || "ЛК");
+      cabinetAvatar.href = "/cabinet.html";
+    } else {
+      cabinetAvatar.href = "/cabinet.html";
     }
   }
   if (catalogLink) catalogLink.style.display = isAuth ? "inline-flex" : "none";
@@ -1472,9 +1536,9 @@ function setupAuthControls() {
       }
       try {
         await loginByCode(email, code);
-        setAuthStatus("Вход по коду выполнен. Перенаправляю в кабинет...");
+        setAuthStatus("Вход по коду выполнен. Перенаправляю...");
         toggleVerifyCard(false);
-        window.location.href = "/cabinet.html";
+        window.location.href = getPrimaryRouteForCurrentUser();
       } catch (e) {
         const msg = String(e.message || "");
         if (msg.toLowerCase().includes("email not verified")) {
@@ -1503,9 +1567,9 @@ function setupAuthControls() {
 
       try {
         await login(email, password);
-        setAuthStatus("Вход выполнен. Перенаправляю в кабинет...");
+        setAuthStatus("Вход выполнен. Перенаправляю...");
         toggleVerifyCard(false);
-        window.location.href = "/cabinet.html";
+        window.location.href = getPrimaryRouteForCurrentUser();
       } catch (e) {
         const msg = String(e.message || "");
         if (msg.toLowerCase().includes("email not verified")) {
@@ -1895,13 +1959,31 @@ async function initMasterPage() {
   }
 
   const addReviewBtn = qs("#add-review-btn");
+  const reviewFormCard = qs("#review-form-card");
+  const reviewFormHint = qs("#review-form-hint");
+  const reviewRatingInput = qs("#review-rating");
+  const reviewTextInput = qs("#review-text");
   const reviewMediaInput = qs("#review-media-files");
   const reviewMediaInfo = qs("#review-media-info");
+  const reviewPolicy = data.review_policy || {};
+  const canAddReview = Boolean(reviewPolicy.can_add);
+  const reviewPolicyCode = String(reviewPolicy.code || "");
+  const reviewReason = String(reviewPolicy.reason || "Оставить отзыв можно только после посещения мастер-класса.");
+  const hideReviewForm = reviewPolicyCode === "self review forbidden";
+
+  if (reviewFormCard) reviewFormCard.style.display = hideReviewForm ? "none" : "grid";
+  if (hideReviewForm) return;
+  if (reviewFormHint) reviewFormHint.textContent = reviewReason;
+  if (reviewRatingInput) reviewRatingInput.disabled = !canAddReview;
+  if (reviewTextInput) reviewTextInput.disabled = !canAddReview;
+  if (reviewMediaInput) reviewMediaInput.disabled = !canAddReview;
+  if (addReviewBtn) addReviewBtn.disabled = !canAddReview;
   if (reviewMediaInfo && !state.reviewMediaDataUrls.length) {
     reviewMediaInfo.textContent = "Фото/видео не выбраны (до 3 файлов)";
   }
   if (reviewMediaInput) {
     reviewMediaInput.onchange = async (event) => {
+      if (!canAddReview) return;
       const selected = Array.from(event.target.files || []);
       if (!selected.length) return;
 
@@ -1925,9 +2007,13 @@ async function initMasterPage() {
   }
 
   if (addReviewBtn) {
+    if (!canAddReview) {
+      addReviewBtn.onclick = null;
+      return;
+    }
     addReviewBtn.onclick = async () => {
-      const rating = Number(qs("#review-rating")?.value || 5);
-      const text = qs("#review-text")?.value || "";
+      const rating = Number(reviewRatingInput?.value || 5);
+      const text = reviewTextInput?.value || "";
       try {
         await api("/reviews", {
           method: "POST",
@@ -1939,7 +2025,7 @@ async function initMasterPage() {
           }),
         });
         show("Отзыв добавлен");
-        qs("#review-text").value = "";
+        if (reviewTextInput) reviewTextInput.value = "";
         state.reviewMediaDataUrls = [];
         if (reviewMediaInput) reviewMediaInput.value = "";
         if (reviewMediaInfo) reviewMediaInfo.textContent = "Фото/видео не выбраны (до 3 файлов)";
@@ -2046,9 +2132,10 @@ async function initWorkshopPage() {
           const wrap = qs("#booking-result");
           if (wrap) {
             wrap.innerHTML = `
-              <a class="button" href="${withAuthQuery(links.apple_ics_url)}">Apple Calendar</a>
+              <button type="button" class="button" data-download-ics="${escapeHtml(links.apple_ics_url)}" data-download-filename="booking-${Number(result.booking_id || 0)}.ics">Apple Calendar</button>
               <a class="button" href="${links.google_url}" target="_blank" rel="noopener noreferrer">Google Calendar</a>
             `;
+            bindCalendarDownloadButtons(wrap);
           }
         }
         show(result.message === "Booked" ? "Бронь подтверждена" : "Добавлены в очередь");
@@ -2086,7 +2173,7 @@ async function loadMyBookings() {
               <span>${slotStart} · ${escapeHtml(slotType)} · ${slotPrice} ₽ · мест ${totalSeats} (занято ${bookedSeats}, свободно ${freeSeats}) · записей ${bookedRecords}</span>
             </div>
             <div class="inline booking-actions">
-              <a class="button" href="${withAuthQuery(`/api/admin/slots/${Number(slot.id || 0)}/calendar.ics`)}">Apple Calendar</a>
+              <button type="button" class="button" data-download-ics="/api/admin/slots/${Number(slot.id || 0)}/calendar.ics" data-download-filename="master-slot-${Number(slot.id || 0)}.ics">Apple Calendar</button>
               <a
                 class="button"
                 href="${googleCalendarUrlFromBooking({
@@ -2104,6 +2191,7 @@ async function loadMyBookings() {
         `;
       })
       .join("");
+    bindCalendarDownloadButtons(list);
     return;
   }
 
@@ -2126,21 +2214,23 @@ async function loadMyBookings() {
           <strong>${escapeHtml(b.title)}</strong>
           <span>${new Date(b.start_at).toLocaleString("ru-RU")} · ${Number(b.guests || 0)} гостей · ${escapeHtml(b.status)}</span>
         </div>
-        <div class="inline">
+        <div class="booking-actions">
           ${
             status === "booked"
-              ? `<a class="button" href="${withAuthQuery(`/api/bookings/${b.id}/calendar.ics`)}">Apple Calendar</a>
-                 <a class="button" href="${googleCalendarUrlFromBooking(b)}" target="_blank" rel="noopener noreferrer">Google Calendar</a>`
+              ? `<button type="button" class="button booking-action-calendar" data-download-ics="/api/bookings/${b.id}/calendar.ics" data-download-filename="booking-${Number(b.id || 0)}.ics">Apple Calendar</button>
+                 <a class="button booking-action-calendar" href="${googleCalendarUrlFromBooking(b)}" target="_blank" rel="noopener noreferrer">Google Calendar</a>`
               : ""
           }
-          ${canManageBooking ? `<button class="button ghost" data-move-id="${b.id}">Перенести</button>` : ""}
-          ${canManageBooking ? `<button class="button ghost" data-cancel-id="${b.id}">Отменить бронь</button>` : ""}
+          ${canManageBooking ? `<button class="button ghost booking-action-wide" data-move-id="${b.id}">Перенести</button>` : ""}
+          ${canManageBooking ? `<button class="button ghost booking-action-wide" data-cancel-id="${b.id}">Отменить бронь</button>` : ""}
         </div>
       </div>
     `
       }
     )
     .join("");
+
+  bindCalendarDownloadButtons(list);
 
   list.querySelectorAll("button[data-cancel-id]").forEach((btn) => {
     btn.addEventListener("click", async () => {
@@ -2572,6 +2662,13 @@ async function initCabinetPage() {
         if (avatarFileInput) avatarFileInput.value = "";
         if (avatarFileInfo) avatarFileInfo.textContent = state.me.avatar_url ? "Текущее фото установлено" : "Фото не выбрано";
         updateNavUser();
+        if (updated.needs_email_verification) {
+          state.pendingVerifyEmail = updated.email || "";
+          localStorage.setItem("pending_verify_email", state.pendingVerifyEmail);
+          show("Почта изменена. Подтвердите новый адрес кодом из письма.");
+          window.location.href = "/#auth";
+          return;
+        }
         show("Профиль обновлен");
       } catch (e) {
         show(e.message);

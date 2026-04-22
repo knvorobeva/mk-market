@@ -13,14 +13,18 @@ from email.message import EmailMessage
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from urllib.parse import urlencode
+
 import jwt
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Response, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
-from passlib.contex import CryptContext
+from passlib.context import CryptContext
+
 APP_SECRET = os.getenv("APP_SECRET", "change-me")
 JWT_ALG = "HS256"
 TOKEN_EXPIRE_HOURS = 24
+LOGIN_CODE_MAX_ATTEMPTS = 5
+LOGIN_CODE_LOCK_MINUTES = 15
 DB_PATH = os.getenv("DB_PATH", "app.db")
 SMTP_HOST = os.getenv("SMTP_HOST", "")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
@@ -31,24 +35,36 @@ SMTP_STARTTLS = os.getenv("SMTP_STARTTLS", "1") in ("1", "true", "yes", "on")
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
 GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "")
+
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 security = HTTPBearer()
 security_optional = HTTPBearer(auto_error=False)
 app = FastAPI()
+
+
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
 def utc_now_iso() -> str:
     return utc_now().isoformat()
+
+
 def parse_dt(value: str) -> datetime:
     dt = datetime.fromisoformat(value)
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(timezone.utc)
+
+
 WORKSHOP_TYPE_VALUES = ("Групповой МК", "Индивидуальный МК", "МК-Свидание")
+
+
 def normalize_workshop_type(value: str, description: str = "") -> str:
     text = (value or "").strip()
     if text in WORKSHOP_TYPE_VALUES:
         return text
+
     source = f"{text} {description or ''}".casefold()
     if "свидан" in source:
         return "МК-Свидание"
@@ -57,6 +73,8 @@ def normalize_workshop_type(value: str, description: str = "") -> str:
     if "груп" in source:
         return "Групповой МК"
     return "Групповой МК"
+
+
 def normalize_workshop_capacity(workshop_type: str, capacity_value: int) -> int:
     normalized_type = normalize_workshop_type(workshop_type)
     if normalized_type == "Индивидуальный МК":
@@ -64,27 +82,38 @@ def normalize_workshop_capacity(workshop_type: str, capacity_value: int) -> int:
     if normalized_type == "МК-Свидание":
         return 2
     return max(1, int(capacity_value or 6))
+
+
 def workshop_types_from_csv(raw_value: str, fallback_type: str = "") -> list[str]:
     raw_parts = [str(part or "").strip() for part in str(raw_value or "").split(",")]
     parts = [part for part in raw_parts if part]
     if not parts and fallback_type:
         parts = [str(fallback_type).strip()]
+
     seen = set()
     for part in parts:
         seen.add(normalize_workshop_type(part))
+
     if not seen:
         seen.add(normalize_workshop_type(fallback_type or "Групповой МК"))
+
     ordered = [value for value in WORKSHOP_TYPE_VALUES if value in seen]
     return ordered
+
+
 def workshop_types_label(workshop_types: list[str]) -> str:
     items = [str(item or "").strip() for item in workshop_types if str(item or "").strip()]
     return ", ".join(items) if items else "Групповой МК"
+
+
 def db():
     conn = sqlite3.connect(DB_PATH, timeout=20)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA busy_timeout = 20000")
     return conn
+
+
 def user_view(row: sqlite3.Row | dict) -> dict:
     return {
         "id": row["id"],
@@ -96,6 +125,16 @@ def user_view(row: sqlite3.Row | dict) -> dict:
         "bio": row["bio"],
         "address": row["address"],
     }
+
+
+def account_view(row: sqlite3.Row | dict) -> dict:
+    data = user_view(row)
+    email_verified = bool(int(row["email_verified"] or 0))
+    data["email_verified"] = email_verified
+    data["needs_email_verification"] = not email_verified
+    return data
+
+
 def create_token(user_id: int, email: str) -> str:
     payload = {
         "sub": str(user_id),
@@ -103,8 +142,37 @@ def create_token(user_id: int, email: str) -> str:
         "exp": utc_now() + timedelta(hours=TOKEN_EXPIRE_HOURS),
     }
     return jwt.encode(payload, APP_SECRET, algorithm=JWT_ALG)
+
+
 def generate_verify_code(length: int = 6) -> str:
     return "".join(random.choice(string.digits) for _ in range(length))
+
+
+def get_login_code_lock_until(cur: sqlite3.Cursor, email: str) -> Optional[datetime]:
+    cur.execute(
+        """
+        SELECT locked_until
+        FROM login_codes
+        WHERE email = ?
+          AND purpose = 'login'
+          AND locked_until IS NOT NULL
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (email,),
+    )
+    row = cur.fetchone()
+    if not row or not row["locked_until"]:
+        return None
+    try:
+        locked_until = parse_dt(str(row["locked_until"]))
+    except Exception:
+        return None
+    if locked_until <= utc_now():
+        return None
+    return locked_until
+
+
 def log_action(user_id: int, action: str, payload: Optional[dict] = None):
     conn = None
     try:
@@ -119,9 +187,13 @@ def log_action(user_id: int, action: str, payload: Optional[dict] = None):
     finally:
         if conn:
             conn.close()
+
+
 def random_state_token(length: int = 40) -> str:
     alphabet = string.ascii_letters + string.digits
     return "".join(random.choice(alphabet) for _ in range(length))
+
+
 def json_request(url: str, method: str = "GET", data: Optional[dict] = None, headers: Optional[dict] = None):
     raw = json.dumps(data).encode("utf-8") if data is not None else None
     req = urllib.request.Request(url, data=raw, method=method, headers=headers or {})
@@ -135,16 +207,22 @@ def json_request(url: str, method: str = "GET", data: Optional[dict] = None, hea
         return exc.code, payload
     except Exception as exc:
         return 599, {"detail": str(exc)}
+
+
 def run_safe_task(label: str, func, *args):
     try:
         func(*args)
     except Exception as exc:
         print(f"[BACKGROUND-FAIL] {label}: {exc}")
+
+
 def enqueue_task(background_tasks: Optional[BackgroundTasks], label: str, func, *args):
     if background_tasks is None:
         run_safe_task(label, func, *args)
         return
     background_tasks.add_task(run_safe_task, label, func, *args)
+
+
 def sync_user_google_bookings(user_id: int):
     conn = db()
     cur = conn.cursor()
@@ -756,6 +834,8 @@ def init_db():
             email TEXT NOT NULL,
             code TEXT NOT NULL,
             purpose TEXT NOT NULL DEFAULT 'login',
+            failed_attempts INTEGER NOT NULL DEFAULT 0,
+            locked_until TEXT,
             expires_at TEXT NOT NULL,
             used_at TEXT,
             created_at TEXT NOT NULL
@@ -843,6 +923,8 @@ def init_db():
     add_column_if_missing("reviews", "booking_id", "INTEGER")
     add_column_if_missing("reviews", "updated_at", "TEXT")
     add_column_if_missing("reviews", "review_media_json", "TEXT")
+    add_column_if_missing("login_codes", "failed_attempts", "INTEGER NOT NULL DEFAULT 0")
+    add_column_if_missing("login_codes", "locked_until", "TEXT")
 
     cur.execute(
         """
@@ -1111,7 +1193,7 @@ def login(payload: dict):
         raise HTTPException(status_code=403, detail="email not verified")
 
     log_action(row["id"], "login")
-    return {"token": create_token(row["id"], row["email"]), "user": user_view(row)}
+    return {"token": create_token(row["id"], row["email"]), "user": account_view(row)}
 
 
 @app.post("/api/auth/request-login-code")
@@ -1127,6 +1209,14 @@ def request_login_code(payload: dict, background_tasks: BackgroundTasks):
     if not user or int(user["email_verified"] or 0) != 1:
         conn.close()
         return {"ok": True}
+
+    locked_until = get_login_code_lock_until(cur, email)
+    if locked_until:
+        conn.close()
+        return {
+            "ok": True,
+            "cooldown_seconds": max(1, int((locked_until - utc_now()).total_seconds())),
+        }
 
     cur.execute(
         """
@@ -1145,12 +1235,21 @@ def request_login_code(payload: dict, background_tasks: BackgroundTasks):
             conn.close()
             return {"ok": True, "cooldown_seconds": 45}
 
+    cur.execute(
+        """
+        UPDATE login_codes
+        SET used_at = COALESCE(used_at, ?)
+        WHERE email = ? AND purpose = 'login' AND used_at IS NULL
+        """,
+        (utc_now_iso(), email),
+    )
+
     code = generate_verify_code()
     expires_at = (utc_now() + timedelta(minutes=15)).isoformat()
     cur.execute(
         """
-        INSERT INTO login_codes (email, code, purpose, expires_at, created_at)
-        VALUES (?, ?, 'login', ?, ?)
+        INSERT INTO login_codes (email, code, purpose, failed_attempts, locked_until, expires_at, used_at, created_at)
+        VALUES (?, ?, 'login', 0, NULL, ?, NULL, ?)
         """,
         (email, code, expires_at, utc_now_iso()),
     )
@@ -1195,6 +1294,11 @@ def login_by_code(payload: dict):
         conn.close()
         raise HTTPException(status_code=403, detail="email not verified")
 
+    locked_until = get_login_code_lock_until(cur, email)
+    if locked_until:
+        conn.close()
+        raise HTTPException(status_code=429, detail="too many code attempts")
+
     cur.execute(
         """
         SELECT *
@@ -1209,19 +1313,44 @@ def login_by_code(payload: dict):
     if not row:
         conn.close()
         raise HTTPException(status_code=401, detail="invalid code")
-    if row["code"] != code:
-        conn.close()
-        raise HTTPException(status_code=401, detail="invalid code")
     if parse_dt(row["expires_at"]) < utc_now():
         conn.close()
         raise HTTPException(status_code=401, detail="code expired")
+    if row["code"] != code:
+        failed_attempts = int(row["failed_attempts"] or 0) + 1
+        if failed_attempts >= LOGIN_CODE_MAX_ATTEMPTS:
+            now_iso = utc_now_iso()
+            cur.execute(
+                """
+                UPDATE login_codes
+                SET failed_attempts = ?, locked_until = ?, used_at = ?
+                WHERE id = ?
+                """,
+                (
+                    failed_attempts,
+                    (utc_now() + timedelta(minutes=LOGIN_CODE_LOCK_MINUTES)).isoformat(),
+                    now_iso,
+                    row["id"],
+                ),
+            )
+            conn.commit()
+            conn.close()
+            raise HTTPException(status_code=429, detail="too many code attempts")
+
+        cur.execute(
+            "UPDATE login_codes SET failed_attempts = ?, locked_until = NULL WHERE id = ?",
+            (failed_attempts, row["id"]),
+        )
+        conn.commit()
+        conn.close()
+        raise HTTPException(status_code=401, detail="invalid code")
 
     cur.execute("UPDATE login_codes SET used_at = ? WHERE id = ?", (utc_now_iso(), row["id"]))
     conn.commit()
     conn.close()
 
     log_action(user["id"], "login_by_code")
-    return {"token": create_token(user["id"], user["email"]), "user": user_view(user)}
+    return {"token": create_token(user["id"], user["email"]), "user": account_view(user)}
 
 
 @app.get("/api/integrations/google/status")
@@ -1338,11 +1467,11 @@ def google_sync_now(user=Depends(get_current_user)):
 
 @app.get("/api/me")
 def me(user=Depends(get_current_user)):
-    return user_view(user)
+    return account_view(user)
 
 
 @app.put("/api/me")
-def update_me(payload: dict, user=Depends(get_current_user)):
+def update_me(payload: dict, background_tasks: BackgroundTasks, user=Depends(get_current_user)):
     name = (payload.get("name") or user["name"]).strip()
     email = (payload.get("email") or user["email"]).strip().lower()
     avatar_url = payload.get("avatar_url")
@@ -1357,6 +1486,8 @@ def update_me(payload: dict, user=Depends(get_current_user)):
         raise HTTPException(status_code=400, detail="name required")
     if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
         raise HTTPException(status_code=400, detail="invalid email")
+    email_changed = email != str(user["email"] or "").strip().lower()
+    verify_code = generate_verify_code() if email_changed else None
 
     conn = db()
     cur = conn.cursor()
@@ -1383,10 +1514,22 @@ def update_me(payload: dict, user=Depends(get_current_user)):
     conn.execute(
         """
         UPDATE users
-        SET name = ?, email = ?, avatar_url = ?, phone = ?, bio = ?, address = ?, updated_at = ?
+        SET name = ?, email = ?, avatar_url = ?, phone = ?, bio = ?, address = ?,
+            email_verified = ?, email_verify_code = ?, updated_at = ?
         WHERE id = ?
         """,
-        (name, email, avatar_url, phone, bio, address, utc_now_iso(), user["id"]),
+        (
+            name,
+            email,
+            avatar_url,
+            phone,
+            bio,
+            address,
+            0 if email_changed else int(user["email_verified"] or 0),
+            verify_code if email_changed else user["email_verify_code"],
+            utc_now_iso(),
+            user["id"],
+        ),
     )
     conn.commit()
 
@@ -1394,7 +1537,26 @@ def update_me(payload: dict, user=Depends(get_current_user)):
     row = cur.fetchone()
     conn.close()
     log_action(user["id"], "update_profile", {"email": row["email"]})
-    return user_view(row)
+    if email_changed and verify_code:
+        enqueue_task(
+            background_tasks,
+            "profile_verify_email",
+            send_email_notification,
+            email,
+            "profile_verify",
+            "МК-Маркет: подтверждение новой почты",
+            (
+                f"Здравствуйте, {name}!\n\n"
+                "Вы изменили почту в профиле МК-Маркет.\n"
+                "Ваш код подтверждения новой почты:\n"
+                f"{verify_code}\n\n"
+                "Введите этот код на странице входа/регистрации, чтобы подтвердить новый адрес.\n\n"
+                "МК-Маркет"
+            ),
+            {"name": name, "verify_code": verify_code, "email": email},
+            f"КОД ПОДТВЕРЖДЕНИЯ: {verify_code}",
+        )
+    return account_view(row)
 
 
 @app.post("/api/me/password")
@@ -1539,7 +1701,12 @@ def catalog(
 
 
 @app.get("/api/masters/{master_id}")
-def master_page(master_id: int):
+def master_page(
+    master_id: int,
+    creds: Optional[HTTPAuthorizationCredentials] = Depends(security_optional),
+):
+    viewer = get_user_from_token(creds.credentials) if creds else None
+
     conn = db()
     cur = conn.cursor()
 
@@ -1618,6 +1785,7 @@ def master_page(master_id: int):
 
     cur.execute("SELECT AVG(rating) AS avg_rating, COUNT(*) AS cnt FROM reviews WHERE master_id = ?", (master_id,))
     agg = cur.fetchone()
+    review_policy = build_review_policy(conn, viewer, master_id)
 
     conn.close()
     return {
@@ -1628,19 +1796,22 @@ def master_page(master_id: int):
         },
         "workshops": workshops,
         "reviews": reviews,
+        "review_policy": {
+            "can_add": bool(review_policy["can_add"]),
+            "reason": str(review_policy["reason"] or ""),
+            "code": str(review_policy["error_code"] or ""),
+        },
     }
 
 
 @app.get("/api/workshops/{workshop_id}")
 def workshop_card(
     workshop_id: int,
-    access_token: Optional[str] = None,
     creds: Optional[HTTPAuthorizationCredentials] = Depends(security_optional),
 ):
-    token = access_token or (creds.credentials if creds else "")
     user_id = None
-    if token:
-        user = get_user_from_token(token)
+    if creds:
+        user = get_user_from_token(creds.credentials)
         user_id = int(user["id"])
 
     conn = db()
@@ -2232,15 +2403,7 @@ def reschedule_booking(booking_id: int, payload: dict, background_tasks: Backgro
 
 
 @app.get("/api/bookings/{booking_id}/calendar.ics")
-def booking_ics(
-    booking_id: int,
-    access_token: Optional[str] = None,
-    creds: Optional[HTTPAuthorizationCredentials] = Depends(security_optional),
-):
-    token = access_token or (creds.credentials if creds else "")
-    if not token:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    user = get_user_from_token(token)
+def booking_ics(booking_id: int, user=Depends(get_current_user)):
     conn = db()
     cur = conn.cursor()
     cur.execute(
@@ -2320,15 +2483,7 @@ def booking_calendar_links(booking_id: int, user=Depends(get_current_user)):
 
 
 @app.get("/api/admin/slots/{slot_id}/calendar.ics")
-def admin_slot_ics(
-    slot_id: int,
-    access_token: Optional[str] = None,
-    creds: Optional[HTTPAuthorizationCredentials] = Depends(security_optional),
-):
-    token = access_token or (creds.credentials if creds else "")
-    if not token:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    user = get_user_from_token(token)
+def admin_slot_ics(slot_id: int, user=Depends(get_current_user)):
     require_master(user)
 
     conn = db()
@@ -2407,6 +2562,93 @@ def normalize_review_media(raw_media) -> list[str]:
     return normalized_media
 
 
+def build_review_policy(conn: sqlite3.Connection, viewer: Optional[dict], master_id: int) -> dict:
+    if not viewer:
+        return {
+            "can_add": False,
+            "reason": "Войдите, чтобы оставить отзыв.",
+            "error_code": "review login required",
+            "booking_id": None,
+        }
+
+    viewer_id = int(viewer["id"] or 0)
+    if viewer_id == int(master_id):
+        return {
+            "can_add": False,
+            "reason": "Нельзя оставить отзыв самому себе.",
+            "error_code": "self review forbidden",
+            "booking_id": None,
+        }
+
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT b.id, s.start_at
+        FROM bookings b
+        JOIN workshop_slots s ON s.id = b.slot_id
+        JOIN workshops w ON w.id = s.workshop_id
+        WHERE b.user_id = ? AND w.master_id = ? AND b.status = 'booked'
+        ORDER BY s.start_at DESC, b.id DESC
+        """,
+        (viewer_id, master_id),
+    )
+    booking_rows = [dict(row) for row in cur.fetchall()]
+    if not booking_rows:
+        return {
+            "can_add": False,
+            "reason": "Отзыв может оставить только человек, который был именно у этого мастера.",
+            "error_code": "review allowed only for customer of this master",
+            "booking_id": None,
+        }
+
+    now = utc_now()
+    past_booking_ids: list[int] = []
+    for row in booking_rows:
+        start_at_raw = str(row.get("start_at") or "").strip()
+        if not start_at_raw:
+            continue
+        try:
+            start_at = parse_dt(start_at_raw)
+        except Exception:
+            continue
+        if start_at <= now:
+            past_booking_ids.append(int(row["id"]))
+
+    if not past_booking_ids:
+        return {
+            "can_add": False,
+            "reason": "Оставить отзыв можно только после посещения мастер-класса.",
+            "error_code": "review allowed only after completed booking",
+            "booking_id": None,
+        }
+
+    cur.execute(
+        "SELECT COUNT(*) AS cnt FROM reviews WHERE master_id = ? AND user_id = ?",
+        (master_id, viewer_id),
+    )
+    existing_reviews_count = int((cur.fetchone() or {"cnt": 0})["cnt"] or 0)
+    if existing_reviews_count >= len(past_booking_ids):
+        return {
+            "can_add": False,
+            "reason": "Вы уже оставили все доступные отзывы этому мастеру.",
+            "error_code": "review already exists for completed booking",
+            "booking_id": None,
+        }
+
+    cur.execute(
+        "SELECT booking_id FROM reviews WHERE master_id = ? AND user_id = ? AND booking_id IS NOT NULL",
+        (master_id, viewer_id),
+    )
+    used_booking_ids = {int(row["booking_id"]) for row in cur.fetchall() if row["booking_id"]}
+    booking_id = next((bid for bid in past_booking_ids if bid not in used_booking_ids), past_booking_ids[0])
+    return {
+        "can_add": True,
+        "reason": "Оставить отзыв можно только после посещения мастер-класса.",
+        "error_code": "",
+        "booking_id": int(booking_id),
+    }
+
+
 @app.post("/api/reviews")
 def add_review(payload: dict, user=Depends(get_current_user)):
     master_id = int(payload.get("master_id") or 0)
@@ -2427,12 +2669,25 @@ def add_review(payload: dict, user=Depends(get_current_user)):
         conn.close()
         raise HTTPException(status_code=404, detail="master not found")
 
+    review_policy = build_review_policy(conn, user, master_id)
+    if not review_policy["can_add"]:
+        conn.close()
+        raise HTTPException(status_code=403, detail=review_policy["error_code"])
+
     cur.execute(
         """
-        INSERT INTO reviews (master_id, user_id, rating, text, review_media_json, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO reviews (master_id, user_id, booking_id, rating, text, review_media_json, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
-        (master_id, user["id"], rating, text, json.dumps(normalized_media, ensure_ascii=False), utc_now_iso()),
+        (
+            master_id,
+            user["id"],
+            int(review_policy["booking_id"] or 0),
+            rating,
+            text,
+            json.dumps(normalized_media, ensure_ascii=False),
+            utc_now_iso(),
+        ),
     )
     conn.commit()
     review_id = cur.lastrowid
@@ -2473,7 +2728,7 @@ def update_review(review_id: int, payload: dict, user=Depends(get_current_user))
     cur.execute(
         """
         UPDATE reviews
-        SET rating = ?, text = ?, review_media_json = ?, master_reply = NULL, updated_at = ?
+        SET rating = ?, text = ?, review_media_json = ?, updated_at = ?
         WHERE id = ? AND user_id = ?
         """,
         (rating, text, json.dumps(normalized_media, ensure_ascii=False), utc_now_iso(), review_id, user["id"]),

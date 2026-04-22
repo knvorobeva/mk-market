@@ -1,4 +1,5 @@
 const apiBase = "/api";
+
 const state = {
   token: localStorage.getItem("token") || "",
   me: null,
@@ -7,10 +8,15 @@ const state = {
   reviewMediaDataUrls: [],
   pendingVerifyEmail: localStorage.getItem("pending_verify_email") || "",
 };
+
 const WORKSHOP_TYPE_OPTIONS = ["Групповой МК", "Индивидуальный МК", "МК-Свидание"];
+const MAX_REVIEW_MEDIA_FILES = 3;
+let masterCabinetRefreshTimer = null;
+
 function qs(id) {
   return document.querySelector(id);
 }
+
 function show(message) {
   const text = String(message || "");
   let container = document.querySelector(".toast-container");
@@ -19,15 +25,18 @@ function show(message) {
     container.className = "toast-container";
     document.body.appendChild(container);
   }
+
   const toast = document.createElement("div");
   toast.className = "toast";
   toast.textContent = text;
   container.appendChild(toast);
+
   setTimeout(() => {
     toast.classList.add("hide");
     setTimeout(() => toast.remove(), 220);
   }, 2800);
 }
+
 function localizeErrorMessage(message) {
   const msg = String(message || "");
   const map = [
@@ -39,6 +48,7 @@ function localizeErrorMessage(message) {
     { match: "booking not found", text: "Запись не найдена." },
     { match: "invalid credentials", text: "Неверная почта или пароль." },
     { match: "email not verified", text: "Сначала подтвердите почту кодом из письма." },
+    { match: "too many code attempts", text: "Слишком много неверных попыток. Попробуйте снова через 15 минут." },
     { match: "title required", text: "Укажи название мастер-класса." },
     { match: "price, duration_min, capacity must be > 0", text: "Цена, длительность и количество человек должны быть больше 0." },
     { match: "price must be > 0", text: "Цена должна быть больше 0." },
@@ -51,12 +61,29 @@ function localizeErrorMessage(message) {
     { match: "workshop not found", text: "Мастер-класс не найден или не принадлежит вам." },
     { match: "slot not found", text: "Слот не найден." },
     { match: "booking allowed at least 24 hours before start", text: "Запись доступна минимум за 24 часа до начала мастер-класса." },
+    { match: "reschedule allowed at least 24 hours before start", text: "Перенос доступен минимум за 24 часа до начала мастер-класса." },
+    { match: "booking is not active", text: "Перенос доступен только для активной записи." },
+    { match: "target_slot_id required", text: "Выберите новый слот для переноса." },
+    { match: "target slot not found", text: "Выбранный слот не найден." },
+    { match: "target slot must be different", text: "Выберите другой слот." },
+    { match: "target slot must belong to same workshop", text: "Можно переносить только на слот этого же мастер-класса." },
+    { match: "target slot is not available", text: "Этот слот уже недоступен." },
+    { match: "not enough free seats in target slot", text: "В выбранном слоте недостаточно мест." },
+    { match: "you already have booking history for target slot", text: "На этот слот уже была запись с вашего аккаунта. Выберите другой слот." },
     { match: "text required", text: "Введите текст отзыва." },
     { match: "rating must be from 1 to 5", text: "Оценка должна быть от 1 до 5." },
+    { match: "review not found", text: "Отзыв не найден или не принадлежит текущему пользователю." },
+    { match: "forbidden to reply", text: "Отвечать на отзыв может только мастер, которому этот отзыв оставили." },
+    { match: "reply required", text: "Введите ответ на отзыв." },
     { match: "media must be list", text: "Некорректный формат медиа в отзыве." },
-    { match: "too many media items", text: "Можно прикрепить не более 4 фото/видео." },
+    { match: "too many media items", text: "Можно прикрепить не более 3 фото/видео." },
     { match: "only image/video data urls are allowed", text: "Разрешены только фото и видео файлы." },
     { match: "media item is too large", text: "Один из файлов слишком большой." },
+    { match: "self review forbidden", text: "Нельзя оставить отзыв самому себе." },
+    { match: "review allowed only for customer of this master", text: "Отзыв может оставить только человек, который был именно у этого мастера." },
+    { match: "review allowed only after completed booking", text: "Оставить отзыв можно только после посещения мастер-класса." },
+    { match: "review already exists for completed booking", text: "Все доступные отзывы этому мастеру уже оставлены." },
+    { match: "review login required", text: "Войдите, чтобы оставить отзыв." },
   ];
   for (const item of map) {
     if (msg.includes(item.match)) return item.text;
@@ -87,9 +114,11 @@ function avatarBlock(imageUrl, fallbackText = "ЛК") {
   }
   return escapeHtml(fallbackText);
 }
+
 function autoFitAvatarImage(img) {
   if (!img || img.dataset.avatarAutofitBound === "1") return;
   img.dataset.avatarAutofitBound = "1";
+
   const analyzeAndScale = () => {
     if (!img.naturalWidth || !img.naturalHeight) return;
     try {
@@ -97,6 +126,7 @@ function autoFitAvatarImage(img) {
       const ratio = Math.max(img.naturalWidth, img.naturalHeight) / maxSide;
       const w = Math.max(24, Math.round(img.naturalWidth / Math.max(1, ratio)));
       const h = Math.max(24, Math.round(img.naturalHeight / Math.max(1, ratio)));
+
       const canvas = document.createElement("canvas");
       canvas.width = w;
       canvas.height = h;
@@ -104,6 +134,7 @@ function autoFitAvatarImage(img) {
       if (!ctx) return;
       ctx.drawImage(img, 0, 0, w, h);
       const px = ctx.getImageData(0, 0, w, h).data;
+
       const cornerAt = (x, y) => {
         const idx = (y * w + x) * 4;
         return [px[idx], px[idx + 1], px[idx + 2]];
@@ -115,6 +146,7 @@ function autoFitAvatarImage(img) {
         0
       );
       if (spread > 90) return;
+
       const tolerance = 40;
       const isBorder = (x, y) => {
         const idx = (y * w + x) * 4;
@@ -123,18 +155,22 @@ function autoFitAvatarImage(img) {
         const d = Math.abs(px[idx] - avg[0]) + Math.abs(px[idx + 1] - avg[1]) + Math.abs(px[idx + 2] - avg[2]);
         return d <= tolerance;
       };
+
       let top = 0;
       let bottom = h - 1;
       let left = 0;
       let right = w - 1;
+
       while (top < h && Array.from({ length: w }).every((_, x) => isBorder(x, top))) top += 1;
       while (bottom >= 0 && Array.from({ length: w }).every((_, x) => isBorder(x, bottom))) bottom -= 1;
       while (left < w && Array.from({ length: h }).every((_, y) => isBorder(left, y))) left += 1;
       while (right >= 0 && Array.from({ length: h }).every((_, y) => isBorder(right, y))) right -= 1;
+
       if (right <= left || bottom <= top) return;
       const innerW = right - left + 1;
       const innerH = bottom - top + 1;
       const contentRatio = Math.max(innerW / w, innerH / h);
+
       if (contentRatio < 0.82) {
         const scale = Math.min(2.8, Math.max(1.1, 0.9 / Math.max(0.1, contentRatio)));
         img.style.transform = `scale(${scale.toFixed(2)})`;
@@ -143,6 +179,7 @@ function autoFitAvatarImage(img) {
         img.style.transform = "";
       }
     } catch {
+      // skip autofit if canvas analysis is unavailable (e.g. cross-origin restrictions)
     }
   };
 
@@ -152,6 +189,7 @@ function autoFitAvatarImage(img) {
     img.addEventListener("load", analyzeAndScale, { once: true });
   }
 }
+
 function applyImageFallbacks(root = document) {
   root.querySelectorAll(".mk-photo img, .avatar img, .review-avatar img, .nav-avatar img").forEach((img) => {
     if (img.dataset.fallbackBound === "1") return;
@@ -167,11 +205,12 @@ function applyImageFallbacks(root = document) {
       },
       { once: true }
     );
-    if (img.closest(".avatar") || img.closest(".nav-avatar")) {
+    if (img.closest(".avatar")) {
       autoFitAvatarImage(img);
     }
   });
 }
+
 function normalizeRuPhone(value) {
   const digits = String(value || "").replace(/\D/g, "");
   if (!digits) return "+7";
@@ -179,31 +218,38 @@ function normalizeRuPhone(value) {
   if (digits.startsWith("8")) return `+7${digits.slice(1, 11)}`;
   return `+7${digits.slice(0, 10)}`;
 }
+
 function normalizeWorkshopType(value) {
   const type = String(value || "").trim();
   if (WORKSHOP_TYPE_OPTIONS.includes(type)) return type;
   return WORKSHOP_TYPE_OPTIONS[0];
 }
+
 function workshopTypesList(value, fallbackValue = "") {
   const source = Array.isArray(value) ? value : String(value || "").split(",");
   const seen = new Set();
+
   source.forEach((raw) => {
     const text = String(raw || "").trim();
     if (!text) return;
     seen.add(normalizeWorkshopType(text));
   });
+
   if (!seen.size && fallbackValue) {
     const fallbackText = String(fallbackValue || "").trim();
     if (fallbackText) seen.add(normalizeWorkshopType(fallbackText));
   }
+
   const ordered = WORKSHOP_TYPE_OPTIONS.filter((item) => seen.has(item));
   return ordered;
 }
+
 function workshopTypesLabel(value, fallbackValue = "Творческий МК") {
   const types = workshopTypesList(value, fallbackValue);
   if (!types.length) return fallbackValue;
   return types.join(", ");
 }
+
 function capacityForWorkshopType(workshopType, fallbackValue = 1) {
   const type = normalizeWorkshopType(workshopType);
   if (type === "Индивидуальный МК") return 1;
@@ -211,6 +257,7 @@ function capacityForWorkshopType(workshopType, fallbackValue = 1) {
   const fallback = Number(fallbackValue);
   return Number.isFinite(fallback) && fallback > 0 ? fallback : 6;
 }
+
 function syncWorkshopCapacityControl(typeInput, capacityInput) {
   if (!typeInput || !capacityInput) return;
   const type = normalizeWorkshopType(typeInput.value);
@@ -226,6 +273,7 @@ function syncWorkshopCapacityControl(typeInput, capacityInput) {
   capacityInput.readOnly = false;
   capacityInput.disabled = false;
 }
+
 function syncSlotSeatsByType(typeInput, seatsInput) {
   if (!typeInput || !seatsInput) return;
   const type = normalizeWorkshopType(typeInput.value);
@@ -241,9 +289,11 @@ function syncSlotSeatsByType(typeInput, seatsInput) {
   seatsInput.readOnly = false;
   seatsInput.disabled = false;
 }
+
 function ensureWorkshopEditModal() {
   let modal = qs("#workshop-edit-modal");
   if (modal) return modal;
+
   modal = document.createElement("div");
   modal.id = "workshop-edit-modal";
   modal.className = "workshop-edit-modal";
@@ -273,9 +323,11 @@ function ensureWorkshopEditModal() {
       </div>
     </section>
   `;
+
   document.body.appendChild(modal);
   return modal;
 }
+
 function openWorkshopEditModal(current) {
   const modal = ensureWorkshopEditModal();
   const titleInput = qs("#edit-workshop-title");
@@ -289,8 +341,10 @@ function openWorkshopEditModal(current) {
   const saveBtn = qs("#edit-workshop-save");
   const cancelBtn = qs("#edit-workshop-cancel");
   const closeButtons = modal.querySelectorAll("[data-close-edit-modal='1']");
+
   let imageUrl = String(current.image_url || "").trim();
   let readingImage = false;
+
   titleInput.value = String(current.title || "");
   durationInput.value = String(Math.max(1, Number(current.duration_min || 0)));
   locationInput.value = String(current.location || "");
@@ -298,11 +352,13 @@ function openWorkshopEditModal(current) {
   imageFileInput.value = "";
   imageInfo.textContent = imageUrl ? "Текущее фото установлено" : "Фото не установлено";
   statusNode.textContent = "";
+
   removeImageBtn.onclick = () => {
     imageUrl = "";
     imageFileInput.value = "";
     imageInfo.textContent = "Фото будет удалено";
   };
+
   imageFileInput.onchange = async (event) => {
     statusNode.textContent = "";
     const input = event.target;
@@ -331,10 +387,13 @@ function openWorkshopEditModal(current) {
       saveBtn.disabled = false;
     }
   };
+
   modal.hidden = false;
   document.body.classList.add("modal-open");
+
   return new Promise((resolve) => {
     let done = false;
+
     const close = (result = null) => {
       if (done) return;
       done = true;
@@ -347,10 +406,12 @@ function openWorkshopEditModal(current) {
       saveBtn.onclick = null;
       resolve(result);
     };
+
     closeButtons.forEach((btn) => {
       btn.onclick = () => close(null);
     });
     cancelBtn.onclick = () => close(null);
+
     saveBtn.onclick = () => {
       if (readingImage) {
         statusNode.textContent = "Дождись загрузки фото";
@@ -360,6 +421,7 @@ function openWorkshopEditModal(current) {
       const description = descriptionInput.value.trim();
       const location = locationInput.value.trim();
       const durationMin = Number(durationInput.value);
+
       if (!title) {
         statusNode.textContent = "Название не может быть пустым";
         return;
@@ -368,6 +430,7 @@ function openWorkshopEditModal(current) {
         statusNode.textContent = "Длительность должна быть больше 0";
         return;
       }
+
       close({
         title,
         description,
@@ -378,9 +441,11 @@ function openWorkshopEditModal(current) {
     };
   });
 }
+
 function ensureSlotEditModal() {
   let modal = qs("#slot-edit-modal");
   if (modal) return modal;
+
   modal = document.createElement("div");
   modal.id = "slot-edit-modal";
   modal.className = "workshop-edit-modal";
@@ -408,6 +473,7 @@ function ensureSlotEditModal() {
   document.body.appendChild(modal);
   return modal;
 }
+
 function openSlotEditModal(current) {
   const modal = ensureSlotEditModal();
   const startInput = qs("#edit-slot-start");
@@ -418,6 +484,7 @@ function openSlotEditModal(current) {
   const saveBtn = qs("#edit-slot-save");
   const cancelBtn = qs("#edit-slot-cancel");
   const closeButtons = modal.querySelectorAll("[data-close-slot-modal='1']");
+
   typeInput.innerHTML = WORKSHOP_TYPE_OPTIONS.map((option) => `<option value="${escapeHtml(option)}">${escapeHtml(option)}</option>`).join("");
   startInput.value = toLocalInputFromIso(current.start_at);
   typeInput.value = normalizeWorkshopType(current.workshop_type || "");
@@ -425,11 +492,14 @@ function openSlotEditModal(current) {
   seatsInput.value = String(Math.max(1, Number(current.total_seats || 0)));
   syncSlotSeatsByType(typeInput, seatsInput);
   statusNode.textContent = "";
+
   typeInput.onchange = () => {
     syncSlotSeatsByType(typeInput, seatsInput);
   };
+
   modal.hidden = false;
   document.body.classList.add("modal-open");
+
   return new Promise((resolve) => {
     let done = false;
     const close = (result = null) => {
@@ -444,6 +514,7 @@ function openSlotEditModal(current) {
       saveBtn.onclick = null;
       resolve(result);
     };
+
     closeButtons.forEach((btn) => {
       btn.onclick = () => close(null);
     });
@@ -478,6 +549,367 @@ function openSlotEditModal(current) {
         total_seats: seats,
       });
     };
+  });
+}
+
+async function collectReviewMediaFromFiles(files) {
+  const selected = Array.from(files || []);
+  if (!selected.length) return { ok: true, media: [] };
+  if (selected.length > MAX_REVIEW_MEDIA_FILES) return { ok: false, error: "Можно выбрать максимум 3 файла" };
+
+  const mediaItems = [];
+  for (const file of selected) {
+    const isMedia = file.type.startsWith("image/") || file.type.startsWith("video/");
+    if (!isMedia) return { ok: false, error: "Разрешены только фото и видео" };
+    if (file.size > 12 * 1024 * 1024) return { ok: false, error: "Файл больше 12MB. Выбери файл меньше." };
+    const dataUrl = await readFileAsDataUrl(file).catch(() => "");
+    if (!dataUrl) return { ok: false, error: "Не удалось прочитать файл" };
+    mediaItems.push(dataUrl);
+  }
+  return { ok: true, media: mediaItems };
+}
+
+function renderReviewMediaPreview(node, mediaItems) {
+  if (!node) return;
+  if (Array.isArray(mediaItems) && mediaItems.length) {
+    node.innerHTML = renderReviewMediaGallery(mediaItems);
+    applyImageFallbacks(node);
+    return;
+  }
+  node.innerHTML = '<p class="hint">Медиа не прикреплены</p>';
+}
+
+function ensureReviewEditModal() {
+  let modal = qs("#review-edit-modal");
+  if (modal) return modal;
+
+  modal = document.createElement("div");
+  modal.id = "review-edit-modal";
+  modal.className = "workshop-edit-modal";
+  modal.hidden = true;
+  modal.innerHTML = `
+    <div class="workshop-edit-overlay" data-close-review-edit-modal="1"></div>
+    <section class="card workshop-edit-card" role="dialog" aria-modal="true" aria-labelledby="review-edit-title">
+      <div class="workshop-edit-head">
+        <h3 id="review-edit-title">Изменить отзыв</h3>
+        <button type="button" class="button ghost" data-close-review-edit-modal="1">Закрыть</button>
+      </div>
+      <div class="workshop-edit-grid">
+        <label class="field"><span>Оценка</span>
+          <select id="review-edit-rating">
+            <option value="5">5</option>
+            <option value="4">4</option>
+            <option value="3">3</option>
+            <option value="2">2</option>
+            <option value="1">1</option>
+          </select>
+        </label>
+        <label class="field full"><span>Текст</span><textarea id="review-edit-text" rows="4"></textarea></label>
+        <label class="field full"><span>Фото/видео</span><input id="review-edit-files" type="file" accept="image/*,video/*" multiple /></label>
+        <div class="workshop-edit-photo-row full">
+          <span id="review-edit-files-info" class="hint"></span>
+          <button id="review-edit-clear-media" type="button" class="button ghost">Удалить медиа</button>
+        </div>
+        <div id="review-edit-media-preview" class="review-edit-media-preview full"></div>
+      </div>
+      <p id="review-edit-status" class="hint workshop-edit-status"></p>
+      <div class="workshop-edit-actions">
+        <button id="review-edit-cancel" type="button" class="button ghost">Отмена</button>
+        <button id="review-edit-save" type="button" class="button primary">Сохранить</button>
+      </div>
+    </section>
+  `;
+  document.body.appendChild(modal);
+  return modal;
+}
+
+function openReviewEditModal(current) {
+  const modal = ensureReviewEditModal();
+  const ratingInput = qs("#review-edit-rating");
+  const textInput = qs("#review-edit-text");
+  const filesInput = qs("#review-edit-files");
+  const filesInfo = qs("#review-edit-files-info");
+  const clearMediaBtn = qs("#review-edit-clear-media");
+  const previewNode = qs("#review-edit-media-preview");
+  const statusNode = qs("#review-edit-status");
+  const saveBtn = qs("#review-edit-save");
+  const cancelBtn = qs("#review-edit-cancel");
+  const closeButtons = modal.querySelectorAll("[data-close-review-edit-modal='1']");
+
+  ratingInput.value = String(Math.min(5, Math.max(1, Number(current.rating || 5))));
+  textInput.value = String(current.text || "");
+  filesInput.value = "";
+  let mediaData = Array.isArray(current.media) ? current.media.slice(0, MAX_REVIEW_MEDIA_FILES) : [];
+  filesInfo.textContent = mediaData.length ? `Текущих файлов: ${mediaData.length}` : "Фото/видео не прикреплены";
+  renderReviewMediaPreview(previewNode, mediaData);
+  statusNode.textContent = "";
+
+  clearMediaBtn.onclick = () => {
+    mediaData = [];
+    filesInput.value = "";
+    filesInfo.textContent = "Медиа будут удалены";
+    renderReviewMediaPreview(previewNode, mediaData);
+  };
+
+  filesInput.onchange = async (event) => {
+    statusNode.textContent = "";
+    const selected = Array.from(event.target.files || []);
+    if (!selected.length) return;
+    saveBtn.disabled = true;
+    const parsed = await collectReviewMediaFromFiles(selected);
+    saveBtn.disabled = false;
+    if (!parsed.ok) {
+      filesInput.value = "";
+      statusNode.textContent = parsed.error;
+      return;
+    }
+    const merged = [...mediaData, ...parsed.media];
+    if (merged.length > MAX_REVIEW_MEDIA_FILES) {
+      statusNode.textContent = "Можно прикрепить не более 3 фото/видео";
+      filesInput.value = "";
+      return;
+    }
+    mediaData = merged;
+    filesInfo.textContent = `Выбрано файлов: ${mediaData.length}`;
+    renderReviewMediaPreview(previewNode, mediaData);
+  };
+
+  modal.hidden = false;
+  document.body.classList.add("modal-open");
+
+  return new Promise((resolve) => {
+    let done = false;
+    const close = (result = null) => {
+      if (done) return;
+      done = true;
+      modal.hidden = true;
+      document.body.classList.remove("modal-open");
+      closeButtons.forEach((btn) => {
+        btn.onclick = null;
+      });
+      cancelBtn.onclick = null;
+      saveBtn.onclick = null;
+      clearMediaBtn.onclick = null;
+      filesInput.onchange = null;
+      resolve(result);
+    };
+
+    closeButtons.forEach((btn) => {
+      btn.onclick = () => close(null);
+    });
+    cancelBtn.onclick = () => close(null);
+
+    saveBtn.onclick = () => {
+      const rating = Number(ratingInput.value || 0);
+      const text = textInput.value.trim();
+      if (!Number.isFinite(rating) || rating < 1 || rating > 5) {
+        statusNode.textContent = "Оценка должна быть от 1 до 5.";
+        return;
+      }
+      if (!text) {
+        statusNode.textContent = "Введите текст отзыва.";
+        return;
+      }
+      close({
+        rating,
+        text,
+        media: mediaData,
+      });
+    };
+  });
+}
+
+function ensureBookingMoveModal() {
+  let modal = qs("#booking-move-modal");
+  if (modal) return modal;
+
+  modal = document.createElement("div");
+  modal.id = "booking-move-modal";
+  modal.className = "workshop-edit-modal";
+  modal.hidden = true;
+  modal.innerHTML = `
+    <div class="workshop-edit-overlay" data-close-booking-move-modal="1"></div>
+    <section class="card workshop-edit-card" role="dialog" aria-modal="true" aria-labelledby="booking-move-title">
+      <div class="workshop-edit-head">
+        <h3 id="booking-move-title">Перенести запись</h3>
+        <button type="button" class="button ghost" data-close-booking-move-modal="1">Закрыть</button>
+      </div>
+      <div class="workshop-edit-grid">
+        <div id="booking-move-summary" class="booking-move-summary full"></div>
+        <div id="booking-move-options" class="booking-move-options full"></div>
+      </div>
+      <p id="booking-move-status" class="hint workshop-edit-status"></p>
+      <div class="workshop-edit-actions">
+        <button id="booking-move-cancel" type="button" class="button ghost">Отмена</button>
+        <button id="booking-move-save" type="button" class="button primary">Перенести</button>
+      </div>
+    </section>
+  `;
+  document.body.appendChild(modal);
+  return modal;
+}
+
+function openBookingMoveModal(currentBooking, options) {
+  const modal = ensureBookingMoveModal();
+  const summaryNode = qs("#booking-move-summary");
+  const optionsNode = qs("#booking-move-options");
+  const statusNode = qs("#booking-move-status");
+  const saveBtn = qs("#booking-move-save");
+  const cancelBtn = qs("#booking-move-cancel");
+  const closeButtons = modal.querySelectorAll("[data-close-booking-move-modal='1']");
+
+  const title = String(currentBooking?.title || "Мастер-класс");
+  const currentDate = currentBooking?.start_at ? new Date(currentBooking.start_at).toLocaleString("ru-RU") : "";
+  const guests = Math.max(1, Number(currentBooking?.guests || 1));
+  summaryNode.innerHTML = `
+    <strong>${escapeHtml(title)}</strong>
+    <span>Текущая запись: ${escapeHtml(currentDate)} · ${guests} гостей</span>
+  `;
+
+  const normalizedOptions = Array.isArray(options) ? options.filter(Boolean) : [];
+  if (!normalizedOptions.length) {
+    optionsNode.innerHTML = '<p class="hint">Нет подходящих слотов для переноса по этому МК.</p>';
+    saveBtn.disabled = true;
+  } else {
+    optionsNode.innerHTML = normalizedOptions
+      .map((slot, index) => {
+        const slotId = Number(slot.id || 0);
+        const startLabel = slot.start_at ? new Date(slot.start_at).toLocaleString("ru-RU") : "Без даты";
+        const workshopType = normalizeWorkshopType(slot.workshop_type || "");
+        const freeSeats = Math.max(0, Number(slot.free_seats ?? 0));
+        const price = Math.max(0, Number(slot.price ?? 0));
+        return `
+          <label class="booking-move-option">
+            <input type="radio" name="booking-move-slot" value="${slotId}" ${index === 0 ? "checked" : ""} />
+            <div>
+              <strong>${escapeHtml(startLabel)}</strong>
+              <span>Вид МК: ${escapeHtml(workshopType)} · Свободно: ${freeSeats} · Цена: ${price} ₽</span>
+            </div>
+          </label>
+        `;
+      })
+      .join("");
+    saveBtn.disabled = false;
+  }
+  statusNode.textContent = "";
+
+  modal.hidden = false;
+  document.body.classList.add("modal-open");
+
+  return new Promise((resolve) => {
+    let done = false;
+    const close = (result = null) => {
+      if (done) return;
+      done = true;
+      modal.hidden = true;
+      document.body.classList.remove("modal-open");
+      closeButtons.forEach((btn) => {
+        btn.onclick = null;
+      });
+      cancelBtn.onclick = null;
+      saveBtn.onclick = null;
+      saveBtn.disabled = false;
+      resolve(result);
+    };
+
+    closeButtons.forEach((btn) => {
+      btn.onclick = () => close(null);
+    });
+    cancelBtn.onclick = () => close(null);
+
+    saveBtn.onclick = () => {
+      const selected = modal.querySelector("input[name='booking-move-slot']:checked");
+      const targetSlotId = Number(selected?.value || 0);
+      if (targetSlotId <= 0) {
+        statusNode.textContent = "Выберите слот для переноса";
+        return;
+      }
+      close({ target_slot_id: targetSlotId });
+    };
+  });
+}
+
+function ensureSlotPeopleModal() {
+  let modal = qs("#slot-people-modal");
+  if (modal) return modal;
+
+  modal = document.createElement("div");
+  modal.id = "slot-people-modal";
+  modal.className = "workshop-edit-modal";
+  modal.hidden = true;
+  modal.innerHTML = `
+    <div class="workshop-edit-overlay" data-close-slot-people-modal="1"></div>
+    <section class="card workshop-edit-card" role="dialog" aria-modal="true" aria-labelledby="slot-people-title">
+      <div class="workshop-edit-head">
+        <h3 id="slot-people-title">Записавшиеся люди</h3>
+        <button type="button" class="button ghost" data-close-slot-people-modal="1">Закрыть</button>
+      </div>
+      <div class="workshop-edit-grid">
+        <div id="slot-people-summary" class="booking-move-summary full"></div>
+        <div id="slot-people-list" class="slot-people-list full"></div>
+      </div>
+      <div class="workshop-edit-actions">
+        <button id="slot-people-close" type="button" class="button primary">Закрыть</button>
+      </div>
+    </section>
+  `;
+  document.body.appendChild(modal);
+  return modal;
+}
+
+function openSlotPeopleModal(slot, peopleRows) {
+  const modal = ensureSlotPeopleModal();
+  const summaryNode = qs("#slot-people-summary");
+  const listNode = qs("#slot-people-list");
+  const closeBtn = qs("#slot-people-close");
+  const closeButtons = modal.querySelectorAll("[data-close-slot-people-modal='1']");
+
+  const title = String(slot?.workshop_title || "Мастер-класс");
+  const slotDate = slot?.start_at ? new Date(slot.start_at).toLocaleString("ru-RU") : "";
+  const slotType = normalizeWorkshopType(slot?.workshop_type || "");
+  summaryNode.innerHTML = `
+    <strong>${escapeHtml(title)}</strong>
+    <span>${escapeHtml(slotDate)} · ${escapeHtml(slotType)} · Слот ID ${Number(slot?.id || 0)}</span>
+  `;
+
+  const rows = Array.isArray(peopleRows) ? peopleRows : [];
+  listNode.innerHTML = rows.length
+    ? rows
+        .map((person) => {
+          const personDate = new Date(person.created_at || person.updated_at || "").toLocaleString("ru-RU");
+          return `
+          <div class="queue-item">
+            <div class="workshop-admin-meta">
+              <strong>${escapeHtml(person.user_name || "Пользователь")}</strong>
+              <span>${Number(person.guests || 0)} гостей · записан: ${escapeHtml(personDate)}</span>
+            </div>
+            <span class="badge success">booked</span>
+          </div>
+        `;
+        })
+        .join("")
+    : '<p class="hint">На этот слот пока никто не записался.</p>';
+
+  modal.hidden = false;
+  document.body.classList.add("modal-open");
+  return new Promise((resolve) => {
+    let done = false;
+    const close = () => {
+      if (done) return;
+      done = true;
+      modal.hidden = true;
+      document.body.classList.remove("modal-open");
+      closeButtons.forEach((btn) => {
+        btn.onclick = null;
+      });
+      closeBtn.onclick = null;
+      resolve();
+    };
+
+    closeButtons.forEach((btn) => {
+      btn.onclick = close;
+    });
+    closeBtn.onclick = close;
   });
 }
 
@@ -690,7 +1122,7 @@ function isVideoMediaUrl(url) {
 function renderReviewMediaGallery(items) {
   if (!Array.isArray(items) || !items.length) return "";
   const cells = items
-    .slice(0, 4)
+    .slice(0, MAX_REVIEW_MEDIA_FILES)
     .map((src, index) => {
       const safeSrc = escapeHtml(src);
       const alt = `Медиа отзыва ${index + 1}`;
@@ -736,10 +1168,70 @@ function googleCalendarUrlFromBooking(booking) {
   return `https://calendar.google.com/calendar/render?${params.toString()}`;
 }
 
-function withAuthQuery(url) {
-  if (!state.token) return url;
-  const sep = url.includes("?") ? "&" : "?";
-  return `${url}${sep}access_token=${encodeURIComponent(state.token)}`;
+function parseDownloadFilename(disposition, fallbackName = "mk-market.ics") {
+  const raw = String(disposition || "");
+  const utf8Match = raw.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1]);
+    } catch {
+      return utf8Match[1];
+    }
+  }
+  const plainMatch = raw.match(/filename=\"?([^\";]+)\"?/i);
+  if (plainMatch?.[1]) return plainMatch[1];
+  return fallbackName;
+}
+
+async function downloadAuthorizedCalendar(path, fallbackName = "mk-market.ics") {
+  const result = await api(path);
+  const content = String(result?.text || "");
+  const headers = result?.headers;
+  const filename = parseDownloadFilename(headers?.get?.("Content-Disposition"), fallbackName);
+  const blob = new Blob([content], { type: "text/calendar;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function bindCalendarDownloadButtons(root = document) {
+  root.querySelectorAll("[data-download-ics]").forEach((btn) => {
+    if (btn.dataset.downloadBound === "1") return;
+    btn.dataset.downloadBound = "1";
+    btn.addEventListener("click", async () => {
+      const path = btn.getAttribute("data-download-ics") || "";
+      const fallbackName = btn.getAttribute("data-download-filename") || "mk-market.ics";
+      const originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "Скачиваем...";
+      try {
+        await downloadAuthorizedCalendar(path, fallbackName);
+      } catch (e) {
+        show(e.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
+      }
+    });
+  });
+}
+
+function setupMasterCabinetAutoRefresh(enabled) {
+  if (masterCabinetRefreshTimer) {
+    window.clearInterval(masterCabinetRefreshTimer);
+    masterCabinetRefreshTimer = null;
+  }
+  if (!enabled) return;
+  masterCabinetRefreshTimer = window.setInterval(() => {
+    if (!qs("#cabinet-page")) return;
+    if (!state.me || state.me.role !== "master") return;
+    loadMyBookings().catch(() => {});
+  }, 60_000);
 }
 
 function setAuthStatus(message, isError = false) {
@@ -792,6 +1284,14 @@ function parseRole(roleRaw) {
   return "user";
 }
 
+function getPrimaryRouteForRole(roleRaw) {
+  return parseRole(roleRaw) === "master" ? "/new-workshop.html" : "/catalog.html";
+}
+
+function getPrimaryRouteForCurrentUser() {
+  return getPrimaryRouteForRole(state.me?.role || "");
+}
+
 function authHeaders() {
   return state.token ? { Authorization: `Bearer ${state.token}` } : {};
 }
@@ -837,9 +1337,13 @@ function updateNavUser() {
   const myPageLink = qs("#nav-my-page-link");
   const adminLink = qs("#nav-admin-link");
   const logoutBtn = qs("#logout-btn");
+  const logoLinks = document.querySelectorAll("a.logo");
 
   const isAuth = Boolean(state.me);
   const isMaster = isAuth && state.me.role === "master";
+  logoLinks.forEach((link) => {
+    link.href = isAuth ? "/catalog.html" : "/";
+  });
 
   if (loginLink) loginLink.style.display = isAuth ? "none" : "inline-flex";
   if (cabinetAvatar) {
@@ -852,6 +1356,9 @@ function updateNavUser() {
         .map((v) => v[0]?.toUpperCase() || "")
         .join("");
       cabinetAvatar.innerHTML = avatarBlock(state.me.avatar_url, initials || "ЛК");
+      cabinetAvatar.href = "/cabinet.html";
+    } else {
+      cabinetAvatar.href = "/cabinet.html";
     }
   }
   if (catalogLink) catalogLink.style.display = isAuth ? "inline-flex" : "none";
@@ -1029,9 +1536,9 @@ function setupAuthControls() {
       }
       try {
         await loginByCode(email, code);
-        setAuthStatus("Вход по коду выполнен. Перенаправляю в кабинет...");
+        setAuthStatus("Вход по коду выполнен. Перенаправляю...");
         toggleVerifyCard(false);
-        window.location.href = "/cabinet.html";
+        window.location.href = getPrimaryRouteForCurrentUser();
       } catch (e) {
         const msg = String(e.message || "");
         if (msg.toLowerCase().includes("email not verified")) {
@@ -1060,9 +1567,9 @@ function setupAuthControls() {
 
       try {
         await login(email, password);
-        setAuthStatus("Вход выполнен. Перенаправляю в кабинет...");
+        setAuthStatus("Вход выполнен. Перенаправляю...");
         toggleVerifyCard(false);
-        window.location.href = "/cabinet.html";
+        window.location.href = getPrimaryRouteForCurrentUser();
       } catch (e) {
         const msg = String(e.message || "");
         if (msg.toLowerCase().includes("email not verified")) {
@@ -1383,9 +1890,10 @@ async function initMasterPage() {
   if (reviews) {
     reviews.innerHTML = data.reviews
       .map((r) => {
-        const canReply = state.me && state.me.role === "master" && !r.master_reply;
+        const isOwnReview = state.me && Number(state.me.id || 0) === Number(r.user_id || 0);
+        const canReply = state.me && state.me.role === "master" && Number(state.me.id || 0) === Number(masterId || 0);
         return `
-          <article class="review">
+          <article id="review-${Number(r.id || 0)}" class="review" data-review-id="${Number(r.id || 0)}">
             <div class="review-head">
               <div class="review-avatar">${avatarBlock(r.user_avatar, (r.user_name || "U").slice(0, 2).toUpperCase())}</div>
               <div>
@@ -1396,7 +1904,8 @@ async function initMasterPage() {
             <p>${escapeHtml(r.text)}</p>
             ${renderReviewMediaGallery(r.media)}
             ${r.master_reply ? `<div class="review-reply">Ответ мастера: ${escapeHtml(r.master_reply)}</div>` : ""}
-            ${canReply ? `<div class="inline"><input id="reply-${r.id}" type="text" placeholder="Ответ мастера" /><button class="button" data-reply-id="${r.id}">Ответить</button></div>` : ""}
+            ${canReply ? `<div class="inline"><input id="reply-${r.id}" type="text" placeholder="Ответ мастера" value="${escapeHtml(r.master_reply || "")}" /><button class="button" data-reply-id="${r.id}">${r.master_reply ? "Обновить ответ" : "Ответить"}</button></div>` : ""}
+            ${isOwnReview ? `<div class="inline"><button class="button ghost" data-edit-review-id="${r.id}">Изменить отзыв</button></div>` : ""}
           </article>
         `;
       })
@@ -1415,58 +1924,96 @@ async function initMasterPage() {
         }
       });
     });
+
+    reviews.querySelectorAll("button[data-edit-review-id]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = Number(btn.getAttribute("data-edit-review-id"));
+        const current = data.reviews.find((item) => Number(item.id || 0) === id);
+        if (!current) return;
+        const payload = await openReviewEditModal(current);
+        if (!payload) return;
+
+        try {
+          await api(`/reviews/${id}`, {
+            method: "PUT",
+            body: JSON.stringify(payload),
+          });
+          show("Отзыв обновлен");
+          initMasterPage();
+        } catch (e) {
+          show(e.message);
+        }
+      });
+    });
     applyImageFallbacks(reviews);
+
+    const reviewIdFromUrl = Number(new URLSearchParams(window.location.search).get("review_id") || 0);
+    if (reviewIdFromUrl > 0) {
+      const target = reviews.querySelector(`[data-review-id="${reviewIdFromUrl}"]`);
+      if (target) {
+        target.classList.add("review-target");
+        target.scrollIntoView({ behavior: "smooth", block: "center" });
+        setTimeout(() => target.classList.remove("review-target"), 2200);
+      }
+    }
   }
 
   const addReviewBtn = qs("#add-review-btn");
+  const reviewFormCard = qs("#review-form-card");
+  const reviewFormHint = qs("#review-form-hint");
+  const reviewRatingInput = qs("#review-rating");
+  const reviewTextInput = qs("#review-text");
   const reviewMediaInput = qs("#review-media-files");
   const reviewMediaInfo = qs("#review-media-info");
+  const reviewPolicy = data.review_policy || {};
+  const canAddReview = Boolean(reviewPolicy.can_add);
+  const reviewPolicyCode = String(reviewPolicy.code || "");
+  const reviewReason = String(reviewPolicy.reason || "Оставить отзыв можно только после посещения мастер-класса.");
+  const hideReviewForm = reviewPolicyCode === "self review forbidden";
+
+  if (reviewFormCard) reviewFormCard.style.display = hideReviewForm ? "none" : "grid";
+  if (hideReviewForm) return;
+  if (reviewFormHint) reviewFormHint.textContent = reviewReason;
+  if (reviewRatingInput) reviewRatingInput.disabled = !canAddReview;
+  if (reviewTextInput) reviewTextInput.disabled = !canAddReview;
+  if (reviewMediaInput) reviewMediaInput.disabled = !canAddReview;
+  if (addReviewBtn) addReviewBtn.disabled = !canAddReview;
+  if (reviewMediaInfo && !state.reviewMediaDataUrls.length) {
+    reviewMediaInfo.textContent = "Фото/видео не выбраны (до 3 файлов)";
+  }
   if (reviewMediaInput) {
     reviewMediaInput.onchange = async (event) => {
-      const files = Array.from(event.target.files || []);
-      if (!files.length) {
-        state.reviewMediaDataUrls = [];
-        if (reviewMediaInfo) reviewMediaInfo.textContent = "Фото/видео не выбраны";
-        return;
-      }
-      if (files.length > 4) {
-        state.reviewMediaDataUrls = [];
+      if (!canAddReview) return;
+      const selected = Array.from(event.target.files || []);
+      if (!selected.length) return;
+
+      const parsed = await collectReviewMediaFromFiles(selected);
+      if (!parsed.ok) {
         reviewMediaInput.value = "";
-        if (reviewMediaInfo) reviewMediaInfo.textContent = "Можно выбрать максимум 4 файла";
+        if (reviewMediaInfo) reviewMediaInfo.textContent = parsed.error;
         return;
       }
 
-      const mediaItems = [];
-      for (const file of files) {
-        const isMedia = file.type.startsWith("image/") || file.type.startsWith("video/");
-        if (!isMedia) {
-          state.reviewMediaDataUrls = [];
-          reviewMediaInput.value = "";
-          if (reviewMediaInfo) reviewMediaInfo.textContent = "Разрешены только фото и видео";
-          return;
-        }
-        if (file.size > 12 * 1024 * 1024) {
-          state.reviewMediaDataUrls = [];
-          reviewMediaInput.value = "";
-          if (reviewMediaInfo) reviewMediaInfo.textContent = "Файл больше 12MB. Выбери файл меньше.";
-          return;
-        }
-        const dataUrl = await readFileAsDataUrl(file).catch((e) => {
-          show(e.message);
-          return "";
-        });
-        if (!dataUrl) return;
-        mediaItems.push(dataUrl);
+      const merged = [...state.reviewMediaDataUrls, ...parsed.media];
+      if (merged.length > MAX_REVIEW_MEDIA_FILES) {
+        reviewMediaInput.value = "";
+        if (reviewMediaInfo) reviewMediaInfo.textContent = "Можно прикрепить не более 3 фото/видео";
+        return;
       }
-      state.reviewMediaDataUrls = mediaItems;
-      if (reviewMediaInfo) reviewMediaInfo.textContent = `Файлов выбрано: ${mediaItems.length}`;
+      state.reviewMediaDataUrls = merged;
+      if (reviewMediaInfo) reviewMediaInfo.textContent = `Файлов выбрано: ${state.reviewMediaDataUrls.length} / ${MAX_REVIEW_MEDIA_FILES}`;
+      reviewMediaInput.value = "";
     };
   }
 
   if (addReviewBtn) {
+    if (!canAddReview) {
+      addReviewBtn.onclick = null;
+      return;
+    }
     addReviewBtn.onclick = async () => {
-      const rating = Number(qs("#review-rating")?.value || 5);
-      const text = qs("#review-text")?.value || "";
+      const rating = Number(reviewRatingInput?.value || 5);
+      const text = reviewTextInput?.value || "";
       try {
         await api("/reviews", {
           method: "POST",
@@ -1478,10 +2025,10 @@ async function initMasterPage() {
           }),
         });
         show("Отзыв добавлен");
-        qs("#review-text").value = "";
+        if (reviewTextInput) reviewTextInput.value = "";
         state.reviewMediaDataUrls = [];
         if (reviewMediaInput) reviewMediaInput.value = "";
-        if (reviewMediaInfo) reviewMediaInfo.textContent = "Фото/видео не выбраны";
+        if (reviewMediaInfo) reviewMediaInfo.textContent = "Фото/видео не выбраны (до 3 файлов)";
         initMasterPage();
       } catch (e) {
         show(e.message);
@@ -1541,14 +2088,26 @@ async function initWorkshopPage() {
         const startAtMs = new Date(slot.start_at).getTime();
         const isWithin24h = Number.isFinite(startAtMs) && startAtMs - nowMs < bookingWindowMs;
         const isFull = slot.free_seats <= 0;
-        const isBlocked = isWithin24h || isFull;
-        const buttonLabel = isWithin24h ? "Бронирование закрыто" : isFull ? "Встать в очередь" : "Записаться";
+        const myBookingStatus = String(slot.my_booking_status || "").toLowerCase();
+        const isAlreadyBooked = myBookingStatus === "booked";
+        const isAlreadyQueued = myBookingStatus === "queue";
+        const buttonLabel = isWithin24h
+          ? "Бронирование закрыто"
+          : isAlreadyBooked
+          ? "Вы уже записаны на данный МК"
+          : isAlreadyQueued
+          ? "Вы уже в очереди"
+          : isFull
+          ? "Встать в очередь"
+          : "Записаться";
         const slotPrice = Number(slot.price || data.workshop.price || 0);
+        const slotType = normalizeWorkshopType(slot.workshop_type || data.workshop.workshop_type || "");
+        const isBlocked = isWithin24h || isAlreadyBooked || isAlreadyQueued;
         return `
         <div class="slot ${isFull ? "full" : ""}">
           <div>
             <strong>${new Date(slot.start_at).toLocaleString("ru-RU")}</strong>
-            <span>Свободно: ${slot.free_seats} · Цена: ${slotPrice} ₽${isWithin24h ? " · доступно только за 24 часа" : ""}</span>
+            <span>Вид МК: ${escapeHtml(slotType)} · Свободно: ${slot.free_seats} · Цена: ${slotPrice} ₽${isWithin24h ? " · доступно только за 24 часа" : ""}</span>
           </div>
           <button class="button ${isBlocked ? "" : "primary"}" ${isBlocked ? "disabled" : `data-slot-id="${slot.id}"`}>
             ${buttonLabel}
@@ -1573,9 +2132,10 @@ async function initWorkshopPage() {
           const wrap = qs("#booking-result");
           if (wrap) {
             wrap.innerHTML = `
-              <a class="button" href="${withAuthQuery(links.apple_ics_url)}">Apple Calendar</a>
+              <button type="button" class="button" data-download-ics="${escapeHtml(links.apple_ics_url)}" data-download-filename="booking-${Number(result.booking_id || 0)}.ics">Apple Calendar</button>
               <a class="button" href="${links.google_url}" target="_blank" rel="noopener noreferrer">Google Calendar</a>
             `;
+            bindCalendarDownloadButtons(wrap);
           }
         }
         show(result.message === "Booked" ? "Бронь подтверждена" : "Добавлены в очередь");
@@ -1590,7 +2150,53 @@ async function initWorkshopPage() {
 async function loadMyBookings() {
   const list = qs("#my-bookings-list");
   if (!list || !state.me) return;
+
+  if (state.me.role === "master") {
+    const rows = await api("/me/master-upcoming-slots");
+    if (!rows.length) {
+      list.innerHTML = '<p class="hint">Ближайших мастер-классов на 24 часа нет.</p>';
+      return;
+    }
+    list.innerHTML = rows
+      .map((slot) => {
+        const slotStart = new Date(slot.start_at).toLocaleString("ru-RU");
+        const slotType = normalizeWorkshopType(slot.workshop_type || "");
+        const bookedSeats = Number(slot.booked_seats || 0);
+        const freeSeats = Number(slot.free_seats || 0);
+        const totalSeats = Number(slot.total_seats || 0);
+        const bookedRecords = Number(slot.booked_records || 0);
+        const slotPrice = Number(slot.price || 0);
+        return `
+          <div class="booking-item master-slot-item">
+            <div class="booking-main">
+              <strong>${escapeHtml(slot.workshop_title || "Мастер-класс")}</strong>
+              <span>${slotStart} · ${escapeHtml(slotType)} · ${slotPrice} ₽ · мест ${totalSeats} (занято ${bookedSeats}, свободно ${freeSeats}) · записей ${bookedRecords}</span>
+            </div>
+            <div class="inline booking-actions">
+              <button type="button" class="button" data-download-ics="/api/admin/slots/${Number(slot.id || 0)}/calendar.ics" data-download-filename="master-slot-${Number(slot.id || 0)}.ics">Apple Calendar</button>
+              <a
+                class="button"
+                href="${googleCalendarUrlFromBooking({
+                  title: slot.workshop_title || "МК-Маркет",
+                  start_at: slot.start_at,
+                  end_at: slot.end_at,
+                  location: slot.workshop_location || "",
+                  guests: Math.max(1, bookedSeats),
+                })}"
+                target="_blank"
+                rel="noopener noreferrer"
+              >Google Calendar</a>
+            </div>
+          </div>
+        `;
+      })
+      .join("");
+    bindCalendarDownloadButtons(list);
+    return;
+  }
+
   const rows = await api("/me/bookings");
+  const rowById = new Map(rows.map((item) => [Number(item.id), item]));
 
   if (!rows.length) {
     list.innerHTML = '<p class="hint">Пока нет записей.</p>';
@@ -1599,25 +2205,32 @@ async function loadMyBookings() {
 
   list.innerHTML = rows
     .map(
-      (b) => `
+      (b) => {
+        const status = String(b.status || "");
+        const canManageBooking = status === "booked" || status === "queue";
+        return `
       <div class="booking-item">
         <div>
           <strong>${escapeHtml(b.title)}</strong>
           <span>${new Date(b.start_at).toLocaleString("ru-RU")} · ${Number(b.guests || 0)} гостей · ${escapeHtml(b.status)}</span>
         </div>
-        <div class="inline">
+        <div class="booking-actions">
           ${
-            b.status === "booked"
-              ? `<a class="button" href="${withAuthQuery(`/api/bookings/${b.id}/calendar.ics`)}">Apple Calendar</a>
-                 <a class="button" href="${googleCalendarUrlFromBooking(b)}" target="_blank" rel="noopener noreferrer">Google Calendar</a>`
+            status === "booked"
+              ? `<button type="button" class="button booking-action-calendar" data-download-ics="/api/bookings/${b.id}/calendar.ics" data-download-filename="booking-${Number(b.id || 0)}.ics">Apple Calendar</button>
+                 <a class="button booking-action-calendar" href="${googleCalendarUrlFromBooking(b)}" target="_blank" rel="noopener noreferrer">Google Calendar</a>`
               : ""
           }
-          ${b.status !== "cancelled" ? `<button class="button ghost" data-cancel-id="${b.id}">Отменить бронь</button>` : ""}
+          ${canManageBooking ? `<button class="button ghost booking-action-wide" data-move-id="${b.id}">Перенести</button>` : ""}
+          ${canManageBooking ? `<button class="button ghost booking-action-wide" data-cancel-id="${b.id}">Отменить бронь</button>` : ""}
         </div>
       </div>
     `
+      }
     )
     .join("");
+
+  bindCalendarDownloadButtons(list);
 
   list.querySelectorAll("button[data-cancel-id]").forEach((btn) => {
     btn.addEventListener("click", async () => {
@@ -1631,6 +2244,133 @@ async function loadMyBookings() {
       }
     });
   });
+
+  list.querySelectorAll("button[data-move-id]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = Number(btn.getAttribute("data-move-id"));
+      const booking = rowById.get(id) || {};
+      try {
+        const optionsPayload = await api(`/bookings/${id}/reschedule-options`);
+        const movePayload = await openBookingMoveModal(booking, optionsPayload.options || []);
+        if (!movePayload) return;
+        await api(`/bookings/${id}/reschedule`, {
+          method: "POST",
+          body: JSON.stringify(movePayload),
+        });
+        show("Запись перенесена");
+        await loadMyBookings();
+      } catch (e) {
+        show(e.message);
+      }
+    });
+  });
+}
+
+async function loadMyReviews() {
+  const list = qs("#my-reviews-list");
+  if (!list || !state.me) return;
+
+  const isMaster = state.me.role === "master";
+  const rows = await api(isMaster ? "/me/reviews/received" : "/me/reviews");
+  if (!rows.length) {
+    list.innerHTML = `<p class="hint">${isMaster ? "Пока нет отзывов о вас." : "Пока нет отзывов."}</p>`;
+    return;
+  }
+
+  if (isMaster) {
+    list.innerHTML = rows
+      .map((r) => {
+        const rawRating = Number(r.rating || 0);
+        const ratingVal = Number.isFinite(rawRating) ? Math.min(5, Math.max(1, Math.round(rawRating))) : 5;
+        const stars = `${"★".repeat(ratingVal)}${"☆".repeat(5 - ratingVal)}`;
+        const dateLabel = new Date(r.updated_at || r.created_at || "").toLocaleString("ru-RU");
+        const replyValue = escapeHtml(r.master_reply || "");
+        return `
+        <div class="booking-item my-review-item">
+          <div>
+            <strong>${escapeHtml(r.user_name || "Пользователь")} · ${stars}</strong>
+            <span>${escapeHtml(dateLabel)}</span>
+            <p>${escapeHtml(r.text || "")}</p>
+            ${renderReviewMediaGallery(r.media)}
+            ${r.master_reply ? `<div class="review-reply">Ваш ответ: ${escapeHtml(r.master_reply)}</div>` : ""}
+            <div class="inline my-review-actions">
+              <input id="cabinet-reply-${Number(r.id || 0)}" type="text" placeholder="Ответ мастера" value="${replyValue}" />
+              <button class="button ghost" data-my-review-reply-id="${Number(r.id || 0)}">${r.master_reply ? "Обновить ответ" : "Ответить"}</button>
+              <a class="button" href="/master.html?id=${Number(r.master_id || state.me.id || 0)}&review_id=${Number(r.id || 0)}">К отзыву</a>
+            </div>
+          </div>
+        </div>
+      `;
+      })
+      .join("");
+
+    list.querySelectorAll("button[data-my-review-reply-id]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = Number(btn.getAttribute("data-my-review-reply-id"));
+        const reply = (qs(`#cabinet-reply-${id}`)?.value || "").trim();
+        if (!reply) {
+          show("Введите ответ на отзыв.");
+          return;
+        }
+        try {
+          await api(`/reviews/${id}/reply`, {
+            method: "POST",
+            body: JSON.stringify({ reply }),
+          });
+          show("Ответ сохранен");
+          await loadMyReviews();
+        } catch (e) {
+          show(e.message);
+        }
+      });
+    });
+  } else {
+    list.innerHTML = rows
+      .map((r) => {
+        const rawRating = Number(r.rating || 0);
+        const ratingVal = Number.isFinite(rawRating) ? Math.min(5, Math.max(1, Math.round(rawRating))) : 5;
+        const stars = `${"★".repeat(ratingVal)}${"☆".repeat(5 - ratingVal)}`;
+        const dateLabel = new Date(r.updated_at || r.created_at || "").toLocaleString("ru-RU");
+        return `
+        <div class="booking-item my-review-item">
+          <div>
+            <strong><a class="master-link" href="/master.html?id=${Number(r.master_id || 0)}">${escapeHtml(r.master_name || "Мастер")}</a> · ${stars}</strong>
+            <span>${escapeHtml(dateLabel)}</span>
+            <p>${escapeHtml(r.text || "")}</p>
+            ${renderReviewMediaGallery(r.media)}
+            ${r.master_reply ? `<div class="review-reply">Ответ мастера: ${escapeHtml(r.master_reply)}</div>` : ""}
+            <div class="inline my-review-actions">
+              <button class="button ghost" data-my-review-edit-id="${Number(r.id || 0)}">Изменить</button>
+              <a class="button" href="/master.html?id=${Number(r.master_id || 0)}&review_id=${Number(r.id || 0)}">К отзыву</a>
+            </div>
+          </div>
+        </div>
+      `;
+      })
+      .join("");
+
+    list.querySelectorAll("button[data-my-review-edit-id]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = Number(btn.getAttribute("data-my-review-edit-id"));
+        const current = rows.find((item) => Number(item.id || 0) === id);
+        if (!current) return;
+        const payload = await openReviewEditModal(current);
+        if (!payload) return;
+        try {
+          await api(`/reviews/${id}`, {
+            method: "PUT",
+            body: JSON.stringify(payload),
+          });
+          show("Отзыв обновлен");
+          await loadMyReviews();
+        } catch (e) {
+          show(e.message);
+        }
+      });
+    });
+  }
+
+  applyImageFallbacks(list);
 }
 
 async function loadAdminData() {
@@ -1731,6 +2471,7 @@ async function loadAdminData() {
             <div class="inline">
               <span class="badge">Слот ID ${slot.id}</span>
               <span class="badge ${isActive ? "success" : ""}">${isActive ? "open" : escapeHtml(String(slot.status || "closed"))}</span>
+              <button class="button ghost" data-slot-people-id="${slot.id}">Люди</button>
               <button class="button" data-edit-slot-id="${slot.id}">Изменить слот</button>
               <button class="button danger" data-delete-slot-id="${slot.id}">Удалить слот</button>
             </div>
@@ -1768,6 +2509,20 @@ async function loadAdminData() {
           await api(`/admin/slots/${slotId}`, { method: "DELETE" });
           show("Слот удален");
           await loadAdminData();
+        } catch (e) {
+          show(e.message);
+        }
+      });
+    });
+
+    slotsList.querySelectorAll("button[data-slot-people-id]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const slotId = Number(btn.getAttribute("data-slot-people-id"));
+        const slot = slotsData.find((item) => Number(item.id || 0) === slotId);
+        if (!slot) return;
+        try {
+          const payload = await api(`/admin/slots/${slotId}/people`);
+          await openSlotPeopleModal(slot, payload.people || []);
         } catch (e) {
           show(e.message);
         }
@@ -1817,13 +2572,27 @@ async function initCabinetPage() {
   }
 
   if (cabinetWrap) {
+    const isMaster = state.me.role === "master";
     const profileName = qs("#profile-name");
     const profileEmail = qs("#profile-email");
     const profilePhone = qs("#profile-phone");
+    const profileBioField = qs("#profile-bio-field");
+    const profileAddressField = qs("#profile-address-field");
     const profileBio = qs("#profile-bio");
     const profileAddress = qs("#profile-address");
     const profileAvatarFile = qs("#profile-avatar-file");
     const profileAvatarFileInfo = qs("#profile-avatar-file-info");
+
+    if (profileBioField) profileBioField.style.display = isMaster ? "" : "none";
+    if (profileAddressField) profileAddressField.style.display = isMaster ? "" : "none";
+    const myBookingsTitle = qs("#my-bookings-title");
+    const myBookingsHint = qs("#my-bookings-hint");
+    if (myBookingsTitle) myBookingsTitle.textContent = isMaster ? "Мои мастер-классы" : "Мои записи";
+    if (myBookingsHint) {
+      myBookingsHint.textContent = isMaster
+        ? "Показаны ближайшие слоты на 24 часа. Слот автоматически скрывается через 5 минут после старта."
+        : "Отмена доступна минимум за 24 часа до старта МК.";
+    }
 
     if (profileName) profileName.value = state.me.name || "";
     if (profileEmail) profileEmail.value = state.me.email || "";
@@ -1893,6 +2662,13 @@ async function initCabinetPage() {
         if (avatarFileInput) avatarFileInput.value = "";
         if (avatarFileInfo) avatarFileInfo.textContent = state.me.avatar_url ? "Текущее фото установлено" : "Фото не выбрано";
         updateNavUser();
+        if (updated.needs_email_verification) {
+          state.pendingVerifyEmail = updated.email || "";
+          localStorage.setItem("pending_verify_email", state.pendingVerifyEmail);
+          show("Почта изменена. Подтвердите новый адрес кодом из письма.");
+          window.location.href = "/#auth";
+          return;
+        }
         show("Профиль обновлен");
       } catch (e) {
         show(e.message);
@@ -1923,7 +2699,11 @@ async function initCabinetPage() {
   }
 
   if (cabinetWrap) {
+    setupMasterCabinetAutoRefresh(state.me?.role === "master");
     await loadMyBookings();
+    await loadMyReviews();
+  } else {
+    setupMasterCabinetAutoRefresh(false);
   }
   await loadAdminData();
 
