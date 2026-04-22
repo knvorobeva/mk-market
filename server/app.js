@@ -178,8 +178,7 @@ function autoFitAvatarImage(img) {
       } else {
         img.style.transform = "";
       }
-    } catch {
-    }
+    } catch {}
   };
 
   if (img.complete) {
