@@ -6,6 +6,7 @@ import sqlite3
 import smtplib
 import random
 import string
+import threading
 import urllib.parse
 import urllib.request
 import urllib.error
@@ -35,6 +36,12 @@ SMTP_STARTTLS = os.getenv("SMTP_STARTTLS", "1") in ("1", "true", "yes", "on")
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
 GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "")
+APP_TZ = timezone(timedelta(hours=3))
+REMINDER_WINDOW_MINUTES = int(os.getenv("REMINDER_WINDOW_MINUTES", "10"))
+REMINDER_LOOP_SECONDS = int(os.getenv("REMINDER_LOOP_SECONDS", "600"))
+
+reminder_stop_event = threading.Event()
+reminder_thread: Optional[threading.Thread] = None
 
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 security = HTTPBearer()
@@ -223,6 +230,584 @@ def enqueue_task(background_tasks: Optional[BackgroundTasks], label: str, func, 
     background_tasks.add_task(run_safe_task, label, func, *args)
 
 
+def format_dt_human(value: str) -> str:
+    try:
+        return parse_dt(value).astimezone(APP_TZ).strftime("%d.%m.%Y %H:%M")
+    except Exception:
+        return str(value or "")
+
+
+def people_label(count: int) -> str:
+    value = max(0, int(count or 0))
+    rem10 = value % 10
+    rem100 = value % 100
+    if rem10 == 1 and rem100 != 11:
+        word = "человек"
+    elif rem10 in (2, 3, 4) and rem100 not in (12, 13, 14):
+        word = "человека"
+    else:
+        word = "человек"
+    return f"{value} {word}"
+
+
+def seats_label(count: int) -> str:
+    value = max(0, int(count or 0))
+    rem10 = value % 10
+    rem100 = value % 100
+    if rem10 == 1 and rem100 != 11:
+        word = "место"
+    elif rem10 in (2, 3, 4) and rem100 not in (12, 13, 14):
+        word = "места"
+    else:
+        word = "мест"
+    return f"{value} {word}"
+
+
+def get_notification_state(conn: sqlite3.Connection, state_key: str) -> Optional[str]:
+    cur = conn.cursor()
+    cur.execute("SELECT state_value FROM notification_state WHERE state_key = ?", (state_key,))
+    row = cur.fetchone()
+    return str(row["state_value"]) if row and row["state_value"] is not None else None
+
+
+def set_notification_state(conn: sqlite3.Connection, state_key: str, state_value: str):
+    conn.execute(
+        """
+        INSERT INTO notification_state (state_key, state_value, updated_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(state_key) DO UPDATE SET
+            state_value = excluded.state_value,
+            updated_at = excluded.updated_at
+        """,
+        (state_key, state_value, utc_now_iso()),
+    )
+
+
+def delete_notification_state(conn: sqlite3.Connection, state_key: str):
+    conn.execute("DELETE FROM notification_state WHERE state_key = ?", (state_key,))
+
+
+def claim_notification_once(state_key: str, state_value: str = "sent") -> bool:
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT OR IGNORE INTO notification_state (state_key, state_value, updated_at)
+        VALUES (?, ?, ?)
+        """,
+        (state_key, state_value, utc_now_iso()),
+    )
+    conn.commit()
+    claimed = cur.rowcount > 0
+    conn.close()
+    return claimed
+
+
+def get_booking_context(conn: sqlite3.Connection, booking_id: int) -> Optional[dict]:
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT
+            b.id AS booking_id,
+            b.user_id,
+            b.slot_id,
+            b.guests,
+            b.status,
+            b.created_at,
+            b.updated_at,
+            u.email AS user_email,
+            u.name AS user_name,
+            m.id AS master_id,
+            m.email AS master_email,
+            m.name AS master_name,
+            w.id AS workshop_id,
+            w.title AS workshop_title,
+            w.location,
+            COALESCE(NULLIF(s.workshop_type, ''), NULLIF(w.workshop_type, ''), 'Групповой МК') AS workshop_type,
+            s.start_at,
+            s.end_at
+        FROM bookings b
+        JOIN users u ON u.id = b.user_id
+        JOIN workshop_slots s ON s.id = b.slot_id
+        JOIN workshops w ON w.id = s.workshop_id
+        JOIN users m ON m.id = w.master_id
+        WHERE b.id = ?
+        """,
+        (booking_id,),
+    )
+    row = cur.fetchone()
+    return dict(row) if row else None
+
+
+def get_slot_context(conn: sqlite3.Connection, slot_id: int) -> Optional[dict]:
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT
+            s.id AS slot_id,
+            s.start_at,
+            s.end_at,
+            s.total_seats,
+            s.booked_seats,
+            s.status,
+            COALESCE(NULLIF(s.workshop_type, ''), NULLIF(w.workshop_type, ''), 'Групповой МК') AS workshop_type,
+            w.id AS workshop_id,
+            w.title AS workshop_title,
+            w.location,
+            m.id AS master_id,
+            m.email AS master_email,
+            m.name AS master_name,
+            (
+                SELECT COUNT(*)
+                FROM bookings b
+                WHERE b.slot_id = s.id AND b.status = 'booked'
+            ) AS booked_records,
+            (
+                SELECT COALESCE(SUM(b.guests), 0)
+                FROM bookings b
+                WHERE b.slot_id = s.id AND b.status = 'booked'
+            ) AS booked_guests,
+            (
+                SELECT COUNT(*)
+                FROM bookings b
+                WHERE b.slot_id = s.id AND b.status = 'queue'
+            ) AS queue_records,
+            (
+                SELECT COALESCE(SUM(b.guests), 0)
+                FROM bookings b
+                WHERE b.slot_id = s.id AND b.status = 'queue'
+            ) AS queue_guests
+        FROM workshop_slots s
+        JOIN workshops w ON w.id = s.workshop_id
+        JOIN users m ON m.id = w.master_id
+        WHERE s.id = ?
+        """,
+        (slot_id,),
+    )
+    row = cur.fetchone()
+    return dict(row) if row else None
+
+
+def queue_rows_for_slot(conn: sqlite3.Connection, slot_id: int) -> list[dict]:
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT
+            b.id AS booking_id,
+            b.user_id,
+            b.guests,
+            b.created_at,
+            u.email AS user_email,
+            u.name AS user_name,
+            m.id AS master_id,
+            m.email AS master_email,
+            m.name AS master_name,
+            w.title AS workshop_title,
+            w.location,
+            COALESCE(NULLIF(s.workshop_type, ''), NULLIF(w.workshop_type, ''), 'Групповой МК') AS workshop_type,
+            s.start_at
+        FROM bookings b
+        JOIN users u ON u.id = b.user_id
+        JOIN workshop_slots s ON s.id = b.slot_id
+        JOIN workshops w ON w.id = s.workshop_id
+        JOIN users m ON m.id = w.master_id
+        WHERE b.slot_id = ? AND b.status = 'queue'
+        ORDER BY b.id ASC
+        """,
+        (slot_id,),
+    )
+    rows = [dict(row) for row in cur.fetchall()]
+    category_positions: dict[int, int] = {}
+    for index, row in enumerate(rows, start=1):
+        guests = int(row["guests"] or 1)
+        category_positions[guests] = category_positions.get(guests, 0) + 1
+        row["queue_position"] = index
+        row["queue_category_position"] = category_positions[guests]
+    return rows
+
+
+def send_queue_position_updates_for_slot(slot_id: int, background_tasks: Optional[BackgroundTasks] = None):
+    conn = db()
+    rows = queue_rows_for_slot(conn, slot_id)
+    for row in rows:
+        guests = int(row["guests"] or 1)
+        snapshot = f"{row['queue_position']}:{row['queue_category_position']}:{guests}"
+        state_key = f"queue-position:{row['booking_id']}"
+        previous_snapshot = get_notification_state(conn, state_key)
+        if previous_snapshot == snapshot:
+            continue
+
+        subject = "МК-Маркет: вы в очереди"
+        main_text = "Вы в очереди на мастер-класс."
+        if previous_snapshot is not None:
+            subject = "МК-Маркет: обновилось место в очереди"
+            main_text = "Ваше место в очереди изменилось."
+
+        body = (
+            f"Здравствуйте, {row['user_name']}!\n\n"
+            f"Мастер-класс: «{row['workshop_title']}»\n"
+            f"Мастер: {row['master_name']}\n"
+            f"Когда: {format_dt_human(str(row['start_at']))}\n"
+            f"Формат: {row['workshop_type']}\n"
+            f"Заявка: {seats_label(guests)} ({people_label(guests)})\n\n"
+            f"Сейчас вы на {row['queue_position']} месте в общей очереди.\n"
+            f"Среди заявок на {seats_label(guests)} вы на {row['queue_category_position']} месте.\n\n"
+            "Мы пришлем новое письмо, если ваше место изменится или запись подтвердится автоматически.\n\n"
+            "МК-Маркет"
+        )
+        enqueue_task(
+            background_tasks,
+            f"queue_position_{row['booking_id']}",
+            send_email_notification,
+            row["user_email"],
+            "queue_position",
+            subject,
+            body,
+            {
+                "booking_id": int(row["booking_id"]),
+                "slot_id": int(slot_id),
+                "position": int(row["queue_position"]),
+                "category_position": int(row["queue_category_position"]),
+                "guests": guests,
+            },
+            main_text,
+        )
+        set_notification_state(conn, state_key, snapshot)
+    conn.commit()
+    conn.close()
+
+
+def clear_queue_state(booking_id: int):
+    conn = db()
+    delete_notification_state(conn, f"queue-position:{int(booking_id)}")
+    conn.commit()
+    conn.close()
+
+
+def clear_booking_reminder_state(booking_id: int):
+    conn = db()
+    delete_notification_state(conn, f"user-reminder-24h:{int(booking_id)}")
+    conn.commit()
+    conn.close()
+
+
+def send_password_changed_notification(email: str, name: str):
+    send_email_notification(
+        email,
+        "password_changed",
+        "МК-Маркет: пароль изменен",
+        (
+            f"Здравствуйте, {name}!\n\n"
+            "Пароль вашего аккаунта МК-Маркет был изменен.\n"
+            "Если это были не вы, как можно скорее смените пароль повторно и свяжитесь с поддержкой.\n\n"
+            "МК-Маркет"
+        ),
+        {"email": email},
+        "Пароль аккаунта изменен.",
+    )
+
+
+def send_user_booking_notification(booking_id: int, action: str, extra: Optional[dict] = None):
+    conn = db()
+    context = get_booking_context(conn, booking_id)
+    conn.close()
+    if not context:
+        return
+
+    guests = int(context["guests"] or 1)
+    subjects = {
+        "booked": "МК-Маркет: запись подтверждена",
+        "cancelled": "МК-Маркет: запись отменена",
+        "rescheduled": "МК-Маркет: запись перенесена",
+        "queue_promoted": "МК-Маркет: вас перевели из очереди",
+        "reminder_24h": "МК-Маркет: мастер-класс уже через 24 часа",
+    }
+    mains = {
+        "booked": "Ваша запись подтверждена.",
+        "cancelled": "Запись отменена.",
+        "rescheduled": "Ваша запись перенесена.",
+        "queue_promoted": "Вы переведены из очереди в подтвержденную запись.",
+        "reminder_24h": "До мастер-класса осталось меньше 24 часов.",
+    }
+    body_parts = [
+        f"Здравствуйте, {context['user_name']}!",
+        "",
+        f"Мастер-класс: «{context['workshop_title']}»",
+        f"Мастер: {context['master_name']}",
+        f"Когда: {format_dt_human(str(context['start_at']))}",
+        f"Где: {context['location'] or 'Адрес уточняется в карточке мастер-класса'}",
+        f"Формат: {context['workshop_type']}",
+        f"В заявке: {people_label(guests)}",
+    ]
+    if action == "cancelled":
+        body_parts.extend(["", "Вы отменили эту запись через личный кабинет или связанную интеграцию."])
+    elif action == "rescheduled":
+        old_start = str((extra or {}).get("old_start_at") or "").strip()
+        if old_start:
+            body_parts.extend(["", f"Старая дата и время: {format_dt_human(old_start)}"])
+        body_parts.append(f"Новая дата и время: {format_dt_human(str(context['start_at']))}")
+    elif action == "queue_promoted":
+        body_parts.extend(["", "Вашу заявку автоматически перевели из очереди в подтвержденную запись."])
+    elif action == "reminder_24h":
+        body_parts.extend(["", "Проверьте детали мастер-класса и при необходимости заранее постройте маршрут."])
+    else:
+        body_parts.extend(["", "Запись успешно создана и подтверждена."])
+    body_parts.extend(["", "МК-Маркет"])
+
+    notif_type = {
+        "booked": "booking",
+        "cancelled": "cancel",
+        "rescheduled": "booking_rescheduled",
+        "queue_promoted": "queue_promoted",
+        "reminder_24h": "booking_reminder_24h",
+    }.get(action, "booking")
+    send_email_notification(
+        context["user_email"],
+        notif_type,
+        subjects.get(action, "МК-Маркет: обновление по записи"),
+        "\n".join(body_parts),
+        {
+            "booking_id": int(booking_id),
+            "action": action,
+            **(extra or {}),
+        },
+        mains.get(action, "Статус вашей записи изменился."),
+    )
+
+
+def send_master_booking_notification(booking_id: int, action: str, extra: Optional[dict] = None):
+    conn = db()
+    context = get_booking_context(conn, booking_id)
+    conn.close()
+    if not context:
+        return
+
+    guests = int(context["guests"] or 1)
+    subjects = {
+        "booked": "МК-Маркет: новая запись на ваш мастер-класс",
+        "queue_joined": "МК-Маркет: новая заявка в очередь",
+        "cancelled": "МК-Маркет: запись отменена пользователем",
+        "rescheduled": "МК-Маркет: пользователь перенес запись",
+        "queue_promoted": "МК-Маркет: запись подтверждена из очереди",
+    }
+    mains = {
+        "booked": "Появилась новая подтвержденная запись.",
+        "queue_joined": "Появилась новая заявка в очереди.",
+        "cancelled": "Пользователь отменил запись.",
+        "rescheduled": "Пользователь перенес запись на другой слот.",
+        "queue_promoted": "Одна из заявок перешла из очереди в подтвержденную запись.",
+    }
+    body_parts = [
+        f"Здравствуйте, {context['master_name']}!",
+        "",
+        f"Мастер-класс: «{context['workshop_title']}»",
+        f"Пользователь: {context['user_name']} ({context['user_email']})",
+        f"Когда: {format_dt_human(str(context['start_at']))}",
+        f"Формат: {context['workshop_type']}",
+        f"Заявка: {people_label(guests)}",
+    ]
+    if action == "queue_joined":
+        body_parts.extend(["", "Пользователь встал в очередь ожидания на этот слот."])
+    elif action == "cancelled":
+        body_parts.extend(["", "Запись была отменена пользователем."])
+    elif action == "rescheduled":
+        old_start = str((extra or {}).get("old_start_at") or "").strip()
+        if old_start:
+            body_parts.extend(["", f"Старое время: {format_dt_human(old_start)}"])
+        body_parts.append(f"Новое время: {format_dt_human(str(context['start_at']))}")
+    elif action == "queue_promoted":
+        body_parts.extend(["", "Пользователь был автоматически переведен из очереди в подтвержденную запись."])
+    else:
+        body_parts.extend(["", "Запись подтверждена и уже видна в вашем разделе «Мои мастер-классы»."])
+    body_parts.extend(["", "МК-Маркет"])
+
+    notif_type = {
+        "booked": "master_booking_created",
+        "queue_joined": "master_queue_joined",
+        "cancelled": "master_booking_cancelled",
+        "rescheduled": "master_booking_rescheduled",
+        "queue_promoted": "master_queue_promoted",
+    }.get(action, "master_booking_created")
+    send_email_notification(
+        context["master_email"],
+        notif_type,
+        subjects.get(action, "МК-Маркет: обновление по мастер-классу"),
+        "\n".join(body_parts),
+        {
+            "booking_id": int(booking_id),
+            "action": action,
+            **(extra or {}),
+        },
+        mains.get(action, "По вашему мастер-классу произошло обновление."),
+    )
+
+
+def send_master_new_review_notification(review_id: int):
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT
+            r.id,
+            r.rating,
+            r.text,
+            m.email AS master_email,
+            m.name AS master_name,
+            u.name AS user_name,
+            w.title AS workshop_title
+        FROM reviews r
+        JOIN users m ON m.id = r.master_id
+        JOIN users u ON u.id = r.user_id
+        LEFT JOIN bookings b ON b.id = r.booking_id
+        LEFT JOIN workshop_slots s ON s.id = b.slot_id
+        LEFT JOIN workshops w ON w.id = s.workshop_id
+        WHERE r.id = ?
+        """,
+        (review_id,),
+    )
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        return
+    title = row["workshop_title"] or "ваш мастер-класс"
+    send_email_notification(
+        row["master_email"],
+        "master_new_review",
+        "МК-Маркет: вам оставили новый отзыв",
+        (
+            f"Здравствуйте, {row['master_name']}!\n\n"
+            f"Пользователь {row['user_name']} оставил новый отзыв о мастер-классе «{title}».\n"
+            f"Оценка: {row['rating']} из 5\n\n"
+            f"Текст отзыва:\n{row['text']}\n\n"
+            "Вы можете ответить на отзыв на странице мастера или в личном кабинете.\n\n"
+            "МК-Маркет"
+        ),
+        {"review_id": int(review_id)},
+        "У вас новый отзыв.",
+    )
+
+
+def send_review_reply_notification(review_id: int):
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT
+            r.id,
+            r.master_reply,
+            u.email AS user_email,
+            u.name AS user_name,
+            m.name AS master_name
+        FROM reviews r
+        JOIN users u ON u.id = r.user_id
+        JOIN users m ON m.id = r.master_id
+        WHERE r.id = ?
+        """,
+        (review_id,),
+    )
+    row = cur.fetchone()
+    conn.close()
+    if not row or not row["master_reply"]:
+        return
+    send_email_notification(
+        row["user_email"],
+        "review_reply",
+        "МК-Маркет: мастер ответил на ваш отзыв",
+        (
+            f"Здравствуйте, {row['user_name']}!\n\n"
+            f"Мастер {row['master_name']} ответил на ваш отзыв.\n\n"
+            f"Текст ответа:\n{row['master_reply']}\n\n"
+            "МК-Маркет"
+        ),
+        {"review_id": int(review_id)},
+        "На ваш отзыв пришел ответ мастера.",
+    )
+
+
+def send_master_slot_reminder_notification(slot_id: int):
+    conn = db()
+    context = get_slot_context(conn, slot_id)
+    conn.close()
+    if not context:
+        return
+    send_email_notification(
+        context["master_email"],
+        "master_booking_reminder_24h",
+        "МК-Маркет: мастер-класс уже через 24 часа",
+        (
+            f"Здравствуйте, {context['master_name']}!\n\n"
+            f"Через 24 часа состоится мастер-класс «{context['workshop_title']}».\n"
+            f"Когда: {format_dt_human(str(context['start_at']))}\n"
+            f"Где: {context['location'] or 'Адрес указан в карточке'}\n"
+            f"Формат: {context['workshop_type']}\n"
+            f"Подтвержденных записей: {int(context['booked_records'] or 0)}\n"
+            f"Участников в подтвержденных записях: {people_label(int(context['booked_guests'] or 0))}\n"
+            f"В очереди: {int(context['queue_records'] or 0)} заявок\n\n"
+            "Проверьте список участников и подготовку к занятию.\n\n"
+            "МК-Маркет"
+        ),
+        {"slot_id": int(slot_id)},
+        "Напоминание о мастер-классе через 24 часа.",
+    )
+
+
+def process_due_reminders():
+    window = timedelta(minutes=max(1, REMINDER_WINDOW_MINUTES))
+    now = utc_now()
+    range_start = (now + timedelta(hours=24)) - window
+    range_end = (now + timedelta(hours=24)) + window
+
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT b.id
+        FROM bookings b
+        JOIN workshop_slots s ON s.id = b.slot_id
+        WHERE b.status = 'booked'
+          AND s.start_at >= ?
+          AND s.start_at <= ?
+        ORDER BY s.start_at ASC
+        """,
+        (range_start.isoformat(), range_end.isoformat()),
+    )
+    booking_ids = [int(row["id"]) for row in cur.fetchall()]
+
+    cur.execute(
+        """
+        SELECT s.id
+        FROM workshop_slots s
+        JOIN workshops w ON w.id = s.workshop_id
+        WHERE s.start_at >= ?
+          AND s.start_at <= ?
+        ORDER BY s.start_at ASC
+        """,
+        (range_start.isoformat(), range_end.isoformat()),
+    )
+    slot_ids = [int(row["id"]) for row in cur.fetchall()]
+    conn.close()
+
+    for booking_id in booking_ids:
+        if claim_notification_once(f"user-reminder-24h:{booking_id}"):
+            send_user_booking_notification(booking_id, "reminder_24h")
+
+    for slot_id in slot_ids:
+        conn = db()
+        context = get_slot_context(conn, slot_id)
+        conn.close()
+        if not context:
+            continue
+        if int(context["booked_records"] or 0) <= 0 and int(context["queue_records"] or 0) <= 0:
+            continue
+        if claim_notification_once(f"master-reminder-24h:{slot_id}"):
+            send_master_slot_reminder_notification(slot_id)
+
+
+def reminder_loop():
+    while not reminder_stop_event.wait(max(60, REMINDER_LOOP_SECONDS)):
+        run_safe_task("process_due_reminders", process_due_reminders)
+
+
 def sync_user_google_bookings(user_id: int):
     conn = db()
     cur = conn.cursor()
@@ -281,9 +866,22 @@ def send_email_notification(
         actions = {
             "register_verify": "Открой страницу входа и регистрации, введи код подтверждения в блоке «Подтверждение почты», затем выполни вход.",
             "login_code": "Нажми «Забыли пароль? Вход по коду», введи код из письма и заверши вход в личный кабинет.",
+            "profile_verify": "Подтверди новый адрес почты кодом из письма, чтобы продолжить пользоваться обновленным профилем.",
             "booking": "Проверь раздел «Мои записи» в личном кабинете. При необходимости добавь событие в календарь с сайта.",
             "cancel": "Если хочешь, можешь выбрать другой слот и записаться снова на странице мастер-класса.",
             "queue_promoted": "Проверь «Мои записи»: заявка уже переведена из очереди в подтвержденную запись.",
+            "queue_position": "Следи за очередью: мы автоматически пришлем следующее письмо при изменении места или подтверждении записи.",
+            "booking_rescheduled": "Проверь новое время мастер-класса в разделе «Мои записи» и обнови календарь, если добавляла событие вручную.",
+            "booking_reminder_24h": "Проверь детали мастер-класса, маршрут и материалы. При необходимости открой карточку записи в личном кабинете.",
+            "password_changed": "Если пароль меняли не вы, срочно смените его повторно и обратитесь в поддержку.",
+            "review_reply": "Открой страницу мастера или раздел с отзывами, чтобы прочитать ответ полностью.",
+            "master_new_review": "Открой раздел с отзывами в личном кабинете мастера, чтобы посмотреть новый отзыв и при желании ответить на него.",
+            "master_booking_created": "Открой «Мои мастер-классы», чтобы увидеть нового участника и актуальный список записей.",
+            "master_booking_cancelled": "Проверь актуальную загрузку слота и очередь ожидания в разделе «Мои мастер-классы».",
+            "master_booking_rescheduled": "Открой «Мои мастер-классы», чтобы увидеть обновленный слот и текущий список участников.",
+            "master_queue_joined": "Проверь очередь ожидания в разделе «Мои мастер-классы».",
+            "master_queue_promoted": "Проверь список записавшихся: одна из заявок была подтверждена автоматически.",
+            "master_booking_reminder_24h": "Проверь подготовку к занятию, список участников и очередь ожидания.",
         }
         action_text = actions.get(notif_type, "Проверь актуальный статус в личном кабинете МК-Маркет.")
 
@@ -632,7 +1230,7 @@ def sync_google_to_app(user_id: int):
         conn = db()
         cur = conn.cursor()
         cur.execute(
-            "SELECT b.id, b.status, b.guests, b.slot_id, u.email FROM bookings b JOIN users u ON u.id = b.user_id WHERE b.id = ? AND b.user_id = ?",
+            "SELECT b.id, b.status, b.guests, b.slot_id FROM bookings b WHERE b.id = ? AND b.user_id = ?",
             (row["booking_id"], user_id),
         )
         booking = cur.fetchone()
@@ -645,15 +1243,23 @@ def sync_google_to_app(user_id: int):
             promoted = promote_queue_for_slot(conn, booking["slot_id"])
             conn.commit()
             for promoted_booking in promoted:
+                clear_queue_state(promoted_booking["booking_id"])
                 run_safe_task(
-                    f"google_cancel_queue_promote_notify_{promoted_booking['booking_id']}",
-                    send_booking_notification,
-                    promoted_booking["email"],
+                    f"google_cancel_queue_promote_user_{promoted_booking['booking_id']}",
+                    send_user_booking_notification,
+                    promoted_booking["booking_id"],
                     "queue_promoted",
-                    f"booking_id={promoted_booking['booking_id']}",
+                )
+                run_safe_task(
+                    f"google_cancel_queue_promote_master_{promoted_booking['booking_id']}",
+                    send_master_booking_notification,
+                    promoted_booking["booking_id"],
+                    "queue_promoted",
                 )
                 sync_booking_with_google(promoted_booking["user_id"], promoted_booking["booking_id"])
-            send_booking_notification(booking["email"], "cancel", f"booking_id={booking['id']} source=google")
+            run_safe_task("google_cancel_user_notification", send_user_booking_notification, booking["id"], "cancelled", {"source": "google"})
+            run_safe_task("google_cancel_master_notification", send_master_booking_notification, booking["id"], "cancelled", {"source": "google"})
+            run_safe_task("google_cancel_queue_positions", send_queue_position_updates_for_slot, booking["slot_id"])
             log_action(user_id, "cancel_booking_from_google", {"booking_id": booking["id"]})
             updated += 1
         conn.close()
@@ -809,6 +1415,12 @@ def init_db():
             sent_at TEXT,
             created_at TEXT NOT NULL,
             FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS notification_state (
+            state_key TEXT PRIMARY KEY,
+            state_value TEXT,
+            updated_at TEXT NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS user_actions (
@@ -1480,6 +2092,7 @@ def update_me(payload: dict, background_tasks: BackgroundTasks, user=Depends(get
     current_password = payload.get("current_password") or ""
     new_password = payload.get("new_password") or ""
     new_password_repeat = payload.get("new_password_repeat") or ""
+    password_changed = False
 
     if not name:
         raise HTTPException(status_code=400, detail="name required")
@@ -1509,6 +2122,7 @@ def update_me(payload: dict, background_tasks: BackgroundTasks, user=Depends(get
             conn.close()
             raise HTTPException(status_code=400, detail="new passwords do not match")
         cur.execute("UPDATE users SET password_hash = ? WHERE id = ?", (pwd_context.hash(new_password), user["id"]))
+        password_changed = True
 
     conn.execute(
         """
@@ -1536,6 +2150,14 @@ def update_me(payload: dict, background_tasks: BackgroundTasks, user=Depends(get
     row = cur.fetchone()
     conn.close()
     log_action(user["id"], "update_profile", {"email": row["email"]})
+    if password_changed:
+        enqueue_task(
+            background_tasks,
+            "password_changed_email",
+            send_password_changed_notification,
+            row["email"],
+            row["name"],
+        )
     if email_changed and verify_code:
         enqueue_task(
             background_tasks,
@@ -1559,7 +2181,7 @@ def update_me(payload: dict, background_tasks: BackgroundTasks, user=Depends(get
 
 
 @app.post("/api/me/password")
-def change_my_password(payload: dict, user=Depends(get_current_user)):
+def change_my_password(payload: dict, background_tasks: BackgroundTasks, user=Depends(get_current_user)):
     current_password = payload.get("current_password") or ""
     new_password = payload.get("new_password") or ""
     new_password_repeat = payload.get("new_password_repeat") or ""
@@ -1581,6 +2203,13 @@ def change_my_password(payload: dict, user=Depends(get_current_user)):
     conn.commit()
     conn.close()
     log_action(user["id"], "change_password")
+    enqueue_task(
+        background_tasks,
+        "password_changed_email",
+        send_password_changed_notification,
+        user["email"],
+        user["name"],
+    )
     return {"ok": True}
 
 
@@ -1960,14 +2589,37 @@ def book_workshop(workshop_id: int, payload: dict, background_tasks: BackgroundT
     conn.commit()
     conn.close()
 
-    enqueue_task(
-        background_tasks,
-        "booking_notification",
-        send_booking_notification,
-        user["email"],
-        "booking",
-        f"booking_id={booking_id} status={status}",
-    )
+    clear_queue_state(booking_id)
+    clear_booking_reminder_state(booking_id)
+    if status == "booked":
+        enqueue_task(
+            background_tasks,
+            "booking_notification_user",
+            send_user_booking_notification,
+            booking_id,
+            "booked",
+        )
+        enqueue_task(
+            background_tasks,
+            "booking_notification_master",
+            send_master_booking_notification,
+            booking_id,
+            "booked",
+        )
+    else:
+        enqueue_task(
+            background_tasks,
+            "queue_position_notification",
+            send_queue_position_updates_for_slot,
+            slot_id,
+        )
+        enqueue_task(
+            background_tasks,
+            "queue_notification_master",
+            send_master_booking_notification,
+            booking_id,
+            "queue_joined",
+        )
     enqueue_task(background_tasks, "booking_google_sync", sync_booking_with_google, user["id"], booking_id)
     log_action(user["id"], "book_workshop", {"workshop_id": workshop_id, "slot_id": slot_id, "booking_id": booking_id, "status": status, "guests": guests})
     return {"booking_id": booking_id, "status": status, "message": "Booked" if status == "booked" else "Added to queue"}
@@ -2144,6 +2796,8 @@ def cancel_booking(booking_id: int, background_tasks: BackgroundTasks, user=Depe
         conn.close()
         return {"ok": True, "status": "cancelled"}
 
+    previous_status = str(booking["status"] or "")
+    slot_id = int(booking["slot_id"])
     start_at = parse_dt(booking["start_at"])
     if start_at - utc_now() < timedelta(hours=24):
         conn.close()
@@ -2155,7 +2809,7 @@ def cancel_booking(booking_id: int, background_tasks: BackgroundTasks, user=Depe
     )
 
     promoted = []
-    if booking["status"] == "booked":
+    if previous_status == "booked":
         cur.execute(
             "UPDATE workshop_slots SET booked_seats = booked_seats - ?, updated_at = ? WHERE id = ? AND booked_seats >= ?",
             (booking["guests"], utc_now_iso(), booking["slot_id"], booking["guests"]),
@@ -2165,14 +2819,23 @@ def cancel_booking(booking_id: int, background_tasks: BackgroundTasks, user=Depe
     conn.commit()
     conn.close()
 
+    clear_queue_state(booking_id)
+    clear_booking_reminder_state(booking_id)
     for promoted_booking in promoted:
+        clear_queue_state(promoted_booking["booking_id"])
         enqueue_task(
             background_tasks,
-            f"promote_notification_{promoted_booking['booking_id']}",
-            send_booking_notification,
-            promoted_booking["email"],
+            f"promote_user_notification_{promoted_booking['booking_id']}",
+            send_user_booking_notification,
+            promoted_booking["booking_id"],
             "queue_promoted",
-            f"booking_id={promoted_booking['booking_id']}",
+        )
+        enqueue_task(
+            background_tasks,
+            f"promote_master_notification_{promoted_booking['booking_id']}",
+            send_master_booking_notification,
+            promoted_booking["booking_id"],
+            "queue_promoted",
         )
         enqueue_task(
             background_tasks,
@@ -2181,7 +2844,10 @@ def cancel_booking(booking_id: int, background_tasks: BackgroundTasks, user=Depe
             promoted_booking["user_id"],
             promoted_booking["booking_id"],
         )
-    enqueue_task(background_tasks, "cancel_notification", send_booking_notification, user["email"], "cancel", f"booking_id={booking_id}")
+    enqueue_task(background_tasks, "cancel_notification_user", send_user_booking_notification, booking_id, "cancelled")
+    enqueue_task(background_tasks, "cancel_notification_master", send_master_booking_notification, booking_id, "cancelled")
+    if previous_status in ("booked", "queue"):
+        enqueue_task(background_tasks, "queue_positions_after_cancel", send_queue_position_updates_for_slot, slot_id)
     enqueue_task(background_tasks, "cancel_google_sync", sync_booking_with_google, user["id"], booking_id)
     log_action(user["id"], "cancel_booking", {"booking_id": booking_id})
     return {"ok": True, "status": "cancelled"}
@@ -2298,6 +2964,9 @@ def reschedule_booking(booking_id: int, payload: dict, background_tasks: Backgro
         conn.close()
         raise HTTPException(status_code=400, detail="target slot must be different")
 
+    previous_status = str(booking["status"] or "")
+    old_slot_id = int(booking["slot_id"])
+    old_start_at = str(booking["start_at"] or "")
     start_at = parse_dt(booking["start_at"])
     if start_at - utc_now() < timedelta(hours=24):
         conn.close()
@@ -2350,7 +3019,7 @@ def reschedule_booking(booking_id: int, payload: dict, background_tasks: Backgro
         raise HTTPException(status_code=400, detail="you already have booking history for target slot")
 
     now_iso = utc_now_iso()
-    if booking["status"] == "booked":
+    if previous_status == "booked":
         cur.execute(
             "UPDATE workshop_slots SET booked_seats = booked_seats - ?, updated_at = ? WHERE id = ? AND booked_seats >= ?",
             (booking["guests"], now_iso, booking["slot_id"], booking["guests"]),
@@ -2370,20 +3039,29 @@ def reschedule_booking(booking_id: int, payload: dict, background_tasks: Backgro
     )
 
     promoted = []
-    if booking["status"] == "booked":
+    if previous_status == "booked":
         promoted = promote_queue_for_slot(conn, booking["slot_id"])
 
     conn.commit()
     conn.close()
 
+    clear_queue_state(booking_id)
+    clear_booking_reminder_state(booking_id)
     for promoted_booking in promoted:
+        clear_queue_state(promoted_booking["booking_id"])
         enqueue_task(
             background_tasks,
-            f"reschedule_promote_notification_{promoted_booking['booking_id']}",
-            send_booking_notification,
-            promoted_booking["email"],
+            f"reschedule_promote_user_{promoted_booking['booking_id']}",
+            send_user_booking_notification,
+            promoted_booking["booking_id"],
             "queue_promoted",
-            f"booking_id={promoted_booking['booking_id']}",
+        )
+        enqueue_task(
+            background_tasks,
+            f"reschedule_promote_master_{promoted_booking['booking_id']}",
+            send_master_booking_notification,
+            promoted_booking["booking_id"],
+            "queue_promoted",
         )
         enqueue_task(
             background_tasks,
@@ -2392,6 +3070,23 @@ def reschedule_booking(booking_id: int, payload: dict, background_tasks: Backgro
             promoted_booking["user_id"],
             promoted_booking["booking_id"],
         )
+    enqueue_task(
+        background_tasks,
+        "reschedule_notification_user",
+        send_user_booking_notification,
+        booking_id,
+        "rescheduled",
+        {"old_start_at": old_start_at, "old_slot_id": old_slot_id},
+    )
+    enqueue_task(
+        background_tasks,
+        "reschedule_notification_master",
+        send_master_booking_notification,
+        booking_id,
+        "rescheduled",
+        {"old_start_at": old_start_at, "old_slot_id": old_slot_id},
+    )
+    enqueue_task(background_tasks, "queue_positions_after_reschedule", send_queue_position_updates_for_slot, old_slot_id)
     enqueue_task(background_tasks, "reschedule_google_sync", sync_booking_with_google, user["id"], booking_id)
     log_action(
         user["id"],
@@ -2649,7 +3344,7 @@ def build_review_policy(conn: sqlite3.Connection, viewer: Optional[dict], master
 
 
 @app.post("/api/reviews")
-def add_review(payload: dict, user=Depends(get_current_user)):
+def add_review(payload: dict, background_tasks: BackgroundTasks, user=Depends(get_current_user)):
     master_id = int(payload.get("master_id") or 0)
     rating = int(payload.get("rating") or 0)
     text = (payload.get("text") or "").strip()
@@ -2692,6 +3387,7 @@ def add_review(payload: dict, user=Depends(get_current_user)):
     review_id = cur.lastrowid
     conn.close()
     log_action(user["id"], "add_review", {"review_id": review_id, "master_id": master_id, "rating": rating})
+    enqueue_task(background_tasks, "master_new_review_email", send_master_new_review_notification, review_id)
     return {"id": review_id, "ok": True}
 
 
@@ -2739,7 +3435,7 @@ def update_review(review_id: int, payload: dict, user=Depends(get_current_user))
 
 
 @app.post("/api/reviews/{review_id}/reply")
-def reply_review(review_id: int, payload: dict, user=Depends(get_current_user)):
+def reply_review(review_id: int, payload: dict, background_tasks: BackgroundTasks, user=Depends(get_current_user)):
     require_master(user)
     reply = (payload.get("reply") or "").strip()
     if not reply:
@@ -2760,6 +3456,7 @@ def reply_review(review_id: int, payload: dict, user=Depends(get_current_user)):
     conn.commit()
     conn.close()
     log_action(user["id"], "reply_review", {"review_id": review_id})
+    enqueue_task(background_tasks, "review_reply_email", send_review_reply_notification, review_id)
     return {"ok": True}
 
 
@@ -3207,6 +3904,22 @@ def admin_queue(user=Depends(get_current_user)):
     rows = [dict(r) for r in cur.fetchall()]
     conn.close()
     return rows
+
+
+@app.on_event("startup")
+def startup_background_jobs():
+    global reminder_thread
+    if reminder_thread and reminder_thread.is_alive():
+        return
+    reminder_stop_event.clear()
+    reminder_thread = threading.Thread(target=reminder_loop, name="mkmarket-reminders", daemon=True)
+    reminder_thread.start()
+    run_safe_task("process_due_reminders_startup", process_due_reminders)
+
+
+@app.on_event("shutdown")
+def shutdown_background_jobs():
+    reminder_stop_event.set()
 
 
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
