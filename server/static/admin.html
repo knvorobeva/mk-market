@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>МК-Маркет · Админка</title>
+    <link rel="stylesheet" href="/styles.css?v=20260508-12" />
+  </head>
+  <body>
+    <div class="page" id="moderation-page">
+      <header class="site-header">
+        <a class="logo" href="/"><span class="logo-mark">МК</span>
+          <div><strong>МК-Маркет</strong><span>модерация платформы</span></div></a>
+        <nav class="nav">
+          <a id="nav-login-link" href="/#auth">Вход</a>
+          <a id="nav-catalog-link" href="/catalog.html" style="display:none">Каталог</a>
+          <a id="nav-my-page-link" href="/master.html" style="display:none">Моя страница</a>
+          <a id="nav-admin-link" class="button ghost" href="/new-workshop.html" style="display:none">Мои мастер-классы</a>
+          <a id="nav-superadmin-link" class="button ghost" href="/admin.html" style="display:none">Админка</a>
+          <a id="nav-cabinet-avatar" class="nav-avatar" href="/cabinet.html" style="display:none" aria-label="Личный кабинет">ЛК</a>
+        </nav>
+      </header>
+
+      <main>
+        <section class="section">
+          <div class="section-title">
+            <h2>Админка</h2>
+            <p id="moderation-auth-message" class="hint"></p>
+          </div>
+          <div id="moderation-overview" class="moderation-overview"></div>
+        </section>
+
+        <section class="section" id="moderation-wrap">
+          <div class="admin-grid moderation-grid">
+            <div class="card">
+              <h3>Жалобы</h3>
+              <div id="moderation-reports"></div>
+            </div>
+
+            <div class="card">
+              <h3>Пользователи</h3>
+              <div id="moderation-users"></div>
+            </div>
+
+            <div class="card">
+              <h3>Мастер-классы</h3>
+              <div id="moderation-workshops"></div>
+            </div>
+
+            <div class="card">
+              <h3>Комментарии и отзывы</h3>
+              <div id="moderation-reviews"></div>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <footer class="site-footer">
+        <div>© 2026 МК-Маркет</div>
+        <div>Москва</div>
+      </footer>
+    </div>
+
+    <script src="/app.js?v=20260508-12"></script>
+  </body>
+</html>
